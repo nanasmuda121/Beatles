@@ -1,0 +1,118 @@
+/**
+ * NanzBeatles Project (C) 2026
+ */
+
+package com.nanzbeatles.nanas.extensions
+
+import android.os.Bundle
+import androidx.core.net.toUri
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata.MEDIA_TYPE_MUSIC
+import androidx.media3.common.MediaMetadata.MEDIA_TYPE_VIDEO
+import com.nanzbeatles.innertube.models.SongItem
+import com.nanzbeatles.nanas.db.entities.Song
+import com.nanzbeatles.nanas.models.MediaMetadata
+import com.nanzbeatles.nanas.models.toMediaMetadata
+import com.nanzbeatles.nanas.ui.utils.resize
+import com.nanzbeatles.nanas.ui.utils.resolveArtworkUrl
+import com.nanzbeatles.nanas.ui.utils.toHighQualityThumbnail
+import com.nanzbeatles.innertube.models.WatchEndpoint.WatchEndpointMusicSupportedConfigs.WatchEndpointMusicConfig.Companion.MUSIC_VIDEO_TYPE_ATV
+
+val MediaItem.metadata: MediaMetadata?
+    get() = localConfiguration?.tag as? MediaMetadata
+
+private const val METADATA_KEY_ALBUM_ART_URI = "android.media.metadata.ALBUM_ART_URI"
+private const val METADATA_KEY_ART_URI = "android.media.metadata.ART_URI"
+private const val METADATA_KEY_DISPLAY_ICON_URI = "android.media.metadata.DISPLAY_ICON_URI"
+
+private fun String?.toLockScreenArtworkUrl(mediaId: String? = null): String? =
+    resolveArtworkUrl(this?.toHighQualityThumbnail() ?: this?.resize(1200, 1200), mediaId)
+
+private fun Bundle.putArtworkExtras(artworkUrl: String?) {
+    artworkUrl ?: return
+    putString("artwork_uri", artworkUrl)
+    putString(METADATA_KEY_ALBUM_ART_URI, artworkUrl)
+    putString(METADATA_KEY_ART_URI, artworkUrl)
+    putString(METADATA_KEY_DISPLAY_ICON_URI, artworkUrl)
+}
+
+fun Song.toMediaItem(): MediaItem {
+    val artworkUrl = song.thumbnailUrl.toLockScreenArtworkUrl(song.id)
+    return MediaItem.Builder()
+        .setMediaId(song.id)
+        .setUri(song.id)
+        .setCustomCacheKey(song.id)
+        .setTag(toMediaMetadata())
+        .setMediaMetadata(
+            androidx.media3.common.MediaMetadata.Builder()
+                .setTitle(song.title)
+                .setSubtitle(artists.joinToString { it.name })
+                .setArtist(artists.joinToString { it.name })
+                .setArtworkUri(artworkUrl?.toUri())
+                .setAlbumTitle(song.albumName)
+                .setAlbumArtist(artists.firstOrNull()?.name)
+                .setDisplayTitle(song.title)
+                .setMediaType(if (song.isVideo) MEDIA_TYPE_VIDEO else MEDIA_TYPE_MUSIC)
+                .setIsBrowsable(false)
+                .setIsPlayable(true)
+                .setExtras(Bundle().apply {
+                    putArtworkExtras(artworkUrl)
+                })
+                .build()
+        )
+        .build()
+}
+
+fun SongItem.toMediaItem(): MediaItem {
+    val artworkUrl = thumbnail.toLockScreenArtworkUrl(id)
+    return MediaItem.Builder()
+        .setMediaId(id)
+        .setUri(id)
+        .setCustomCacheKey(id)
+        .setTag(toMediaMetadata())
+        .setMediaMetadata(
+            androidx.media3.common.MediaMetadata.Builder()
+                .setTitle(title)
+                .setSubtitle(artists.joinToString { it.name })
+                .setArtist(artists.joinToString { it.name })
+                .setArtworkUri(artworkUrl?.toUri())
+                .setAlbumTitle(album?.name)
+                .setAlbumArtist(artists.firstOrNull()?.name)
+                .setDisplayTitle(title)
+                .setMediaType(if (isVideoSong) MEDIA_TYPE_VIDEO else MEDIA_TYPE_MUSIC)
+                .setIsBrowsable(false)
+                .setIsPlayable(true)
+                .setExtras(Bundle().apply {
+                    putArtworkExtras(artworkUrl)
+                })
+                .build()
+        )
+        .build()
+}
+
+fun MediaMetadata.toMediaItem(): MediaItem {
+    val artworkUrl = thumbnailUrl.toLockScreenArtworkUrl(id)
+    return MediaItem.Builder()
+        .setMediaId(id)
+        .setUri(id)
+        .setCustomCacheKey(id)
+        .setTag(this)
+        .setMediaMetadata(
+            androidx.media3.common.MediaMetadata.Builder()
+                .setTitle(title)
+                .setSubtitle(artists.joinToString { it.name })
+                .setArtist(artists.joinToString { it.name })
+                .setArtworkUri(artworkUrl?.toUri())
+                .setAlbumTitle(album?.title)
+                .setAlbumArtist(artists.firstOrNull()?.name)
+                .setDisplayTitle(title)
+                .setMediaType(if (isVideoSong) MEDIA_TYPE_VIDEO else MEDIA_TYPE_MUSIC)
+                .setIsBrowsable(false)
+                .setIsPlayable(true)
+                .setExtras(Bundle().apply {
+                    putArtworkExtras(artworkUrl)
+                })
+                .build()
+        )
+        .build()
+}

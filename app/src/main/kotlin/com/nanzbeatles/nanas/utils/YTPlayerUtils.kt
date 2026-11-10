@@ -1,0 +1,678 @@
+/**
+ * NanzBeatles Project (C) 2026
+ */
+
+package com.nanzbeatles.nanas.utils
+
+import android.net.ConnectivityManager
+import androidx.core.net.toUri
+import androidx.media3.common.PlaybackException
+import com.nanzbeatles.innertube.FallbackAudioResolver
+import com.nanzbeatles.innertube.NewPipeExtractor
+import com.nanzbeatles.innertube.PoTokenProvider
+import com.nanzbeatles.innertube.YouTube
+import com.nanzbeatles.innertube.models.YouTubeClient
+import com.nanzbeatles.innertube.models.YouTubeClient.Companion.ANDROID
+import com.nanzbeatles.innertube.models.YouTubeClient.Companion.ANDROID_NO_SDK
+import com.nanzbeatles.innertube.models.YouTubeClient.Companion.ANDROID_VR_1_65_10
+import com.nanzbeatles.innertube.models.YouTubeClient.Companion.ANDROID_VR_NO_AUTH
+import com.nanzbeatles.innertube.models.YouTubeClient.Companion.IPADOS
+import com.nanzbeatles.innertube.models.YouTubeClient.Companion.VISIONOS
+import com.nanzbeatles.innertube.models.YouTubeClient.Companion.WEB_REMIX
+import com.nanzbeatles.innertube.models.response.PlayerResponse
+import com.nanzbeatles.nanas.constants.AudioQuality
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
+import okhttp3.OkHttpClient
+import timber.log.Timber
+import java.util.concurrent.TimeUnit
+
+object YTPlayerUtils {
+    private const val logTag = "YTPlayerUtils"
+
+    /**
+     * Hard deadline for resolving a playable stream URL (PO token + player
+     * requests + signature fallbacks across all clients). Bounded so failures
+     * surface quickly into the app's retry/skip logic instead of spinning.
+     */
+    private const val STREAM_RESOLUTION_TIMEOUT_MS = 45_000L
+
+    @Volatile
+    private var botCheckDetectedUntilMs: Long = 0L
+
+    private val httpClient = OkHttpClient.Builder()
+        .proxy(YouTube.proxy)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .build()
+
+    private val MAIN_CLIENT: YouTubeClient = WEB_REMIX
+    data class PlaybackData(
+        val audioConfig: PlayerResponse.PlayerConfig.AudioConfig?,
+        val videoDetails: PlayerResponse.VideoDetails?,
+        val playbackTracking: PlayerResponse.PlaybackTracking?,
+        val format: PlayerResponse.StreamingData.Format,
+        val streamUrl: String,
+        val streamExpiresInSeconds: Int,
+        /** Client that produced the stream, for logging/debug. */
+        val streamClient: String = "unknown",
+        /** Headers that must accompany every request to [streamUrl]. */
+        val streamHeaders: Map<String, String> = emptyMap(),
+    )
+    /**
+     * Custom player response intended to use for playback.
+     * Metadata like audioConfig and videoDetails are from [MAIN_CLIENT].
+     * Format & stream can be from [MAIN_CLIENT] or [STREAM_FALLBACK_CLIENTS].
+     *
+     * The whole resolution chain (PO token minting + one /player request per
+     * fallback client + NewPipe signature work) is bounded by a hard time
+     * budget. Without it, a degraded network or an anti-bot outage makes the
+     * resolver hang for minutes — the UI shows "loading" forever and the queue
+     * never advances, which is exactly the stuck-Next-song report on TV.
+     */
+    suspend fun playerResponseForPlayback(
+        videoId: String,
+        playlistId: String? = null,
+        audioQuality: AudioQuality,
+        connectivityManager: ConnectivityManager,
+        poTokenProvider: PoTokenProvider? = null,
+        preferMp4Audio: Boolean = false,
+    ): Result<PlaybackData> = try {
+        withTimeout(STREAM_RESOLUTION_TIMEOUT_MS) {
+            resolvePlaybackData(videoId, playlistId, audioQuality, connectivityManager, poTokenProvider, preferMp4Audio)
+        }
+    } catch (e: TimeoutCancellationException) {
+        Timber.tag(logTag).w("Stream resolution timed out after ${STREAM_RESOLUTION_TIMEOUT_MS}ms for $videoId")
+        Result.failure(
+            PlaybackException(
+                "Stream resolution timed out",
+                e,
+                PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+            )
+        )
+    }
+
+    private suspend fun resolvePlaybackData(
+        videoId: String,
+        playlistId: String?,
+        audioQuality: AudioQuality,
+        connectivityManager: ConnectivityManager,
+        poTokenProvider: PoTokenProvider?,
+        preferMp4Audio: Boolean = false,
+    ): Result<PlaybackData> = runCatching {
+        Timber.tag(logTag).d("Fetching player response for videoId: $videoId, playlistId: $playlistId")
+        val isLoggedIn = YouTube.cookie != null
+        Timber.tag(logTag).d("Session authentication status: ${if (isLoggedIn) "Logged in" else "Not logged in"}")
+
+        // Fast-path when YouTube is actively enforcing bot-check on unauthenticated requests:
+        // probe VISIONOS once without slow signatureTimestamp/PO-token extraction, and if blocked,
+        // jump directly to FallbackAudioResolver so playback starts within 1-3 seconds.
+        if (!isLoggedIn && System.currentTimeMillis() < botCheckDetectedUntilMs) {
+            val quickProbe = YouTube.player(
+                videoId,
+                playlistId,
+                VISIONOS,
+                signatureTimestamp = null,
+                poToken = null,
+                setLogin = false,
+            ).getOrNull()
+            if (quickProbe?.playabilityStatus?.status == "OK") {
+                buildPlaybackData(
+                    videoId = videoId,
+                    response = quickProbe,
+                    audioQuality = audioQuality,
+                    connectivityManager = connectivityManager,
+                    poTokenProvider = poTokenProvider,
+                    audioConfig = quickProbe.playerConfig?.audioConfig,
+                    videoDetails = quickProbe.videoDetails,
+                    playbackTracking = quickProbe.playbackTracking,
+                    clientName = VISIONOS.clientName,
+                    client = VISIONOS,
+                    preferMp4Audio = preferMp4Audio,
+                )?.let {
+                    botCheckDetectedUntilMs = 0L
+                    return@runCatching it
+                }
+            }
+            val resolvedDetails = quickProbe?.videoDetails ?: FallbackAudioResolver.resolveVideoDetails(videoId)
+            val fallbackStream = FallbackAudioResolver.resolveFallbackFormatAndUrl(videoId, resolvedDetails)
+            if (fallbackStream != null) {
+                val (fallbackFormat, fallbackUrl, finalDetails) = fallbackStream
+                Timber.tag(logTag).d("Fast-path FallbackAudioResolver stream for $videoId: $fallbackUrl (${fallbackFormat.mimeType})")
+                return@runCatching PlaybackData(
+                    audioConfig = quickProbe?.playerConfig?.audioConfig,
+                    videoDetails = finalDetails,
+                    playbackTracking = quickProbe?.playbackTracking,
+                    format = fallbackFormat,
+                    streamUrl = fallbackUrl,
+                    streamExpiresInSeconds = 21600,
+                    streamClient = "FALLBACK_LOCAL",
+                    streamHeaders = emptyMap(),
+                )
+            }
+        }
+
+        // Probe fast non-signature guest clients (VISIONOS, ANDROID_VR_1_65_10) before running
+        // expensive NewPipe signature extraction or WebView PO token generation.
+        var discoveredAudioConfig: PlayerResponse.PlayerConfig.AudioConfig? = null
+        var discoveredVideoDetails: PlayerResponse.VideoDetails? = null
+        var discoveredPlaybackTracking: PlayerResponse.PlaybackTracking? = null
+        var fallbackFailure: String? = null
+        var loginRequiredCount = 0
+
+        val fastGuestClients = arrayOf(VISIONOS, ANDROID_VR_1_65_10)
+        for (client in fastGuestClients) {
+            val response = YouTube.player(
+                videoId,
+                playlistId,
+                client,
+                signatureTimestamp = null,
+                poToken = null,
+                setLogin = false,
+            ).getOrNull() ?: continue
+
+            if (discoveredAudioConfig == null) discoveredAudioConfig = response.playerConfig?.audioConfig
+            if (discoveredVideoDetails == null) discoveredVideoDetails = response.videoDetails
+            if (discoveredPlaybackTracking == null) discoveredPlaybackTracking = response.playbackTracking
+            fallbackFailure = response.playabilityStatus.reason
+
+            if (response.playabilityStatus.status == "LOGIN_REQUIRED") {
+                loginRequiredCount++
+            }
+
+            buildPlaybackData(
+                videoId = videoId,
+                response = response,
+                audioQuality = audioQuality,
+                connectivityManager = connectivityManager,
+                poTokenProvider = poTokenProvider,
+                audioConfig = discoveredAudioConfig,
+                videoDetails = discoveredVideoDetails,
+                playbackTracking = discoveredPlaybackTracking,
+                clientName = client.clientName,
+                client = client,
+                preferMp4Audio = preferMp4Audio,
+            )?.let { return@runCatching it }
+        }
+
+        // If unauthenticated and both primary guest clients hit LOGIN_REQUIRED bot-check,
+        // cache the bot-check state for 10 minutes and immediately resolve via FallbackAudioResolver
+        // instead of wasting 20+ seconds on NewPipeExtractor + 5 more blocked /player calls.
+        if (!isLoggedIn && loginRequiredCount >= fastGuestClients.size) {
+            botCheckDetectedUntilMs = System.currentTimeMillis() + 10 * 60_000L
+            val resolvedDetails = discoveredVideoDetails ?: FallbackAudioResolver.resolveVideoDetails(videoId)
+            val fallbackStream = FallbackAudioResolver.resolveFallbackFormatAndUrl(videoId, resolvedDetails)
+            if (fallbackStream != null) {
+                val (fallbackFormat, fallbackUrl, finalDetails) = fallbackStream
+                Timber.tag(logTag).d("Bot-check bypass via FallbackAudioResolver for $videoId: $fallbackUrl")
+                return@runCatching PlaybackData(
+                    audioConfig = discoveredAudioConfig,
+                    videoDetails = finalDetails,
+                    playbackTracking = discoveredPlaybackTracking,
+                    format = fallbackFormat,
+                    streamUrl = fallbackUrl,
+                    streamExpiresInSeconds = 21600,
+                    streamClient = "FALLBACK_LOCAL",
+                    streamHeaders = emptyMap(),
+                )
+            }
+        }
+
+        val mainClientPoToken = poTokenProvider?.getPlayerPoToken(videoId)
+        if (mainClientPoToken != null) {
+            Timber.tag(logTag).d("Obtained PO token for MAIN_CLIENT (length=${mainClientPoToken.length})")
+        }
+
+        var cachedSignatureTimestamp: Int? = null
+        var signatureTimestampAttempted = false
+        fun signatureTimestampIfNeeded(client: YouTubeClient): Int? {
+            if (!client.useSignatureTimestamp) return null
+            if (!signatureTimestampAttempted) {
+                signatureTimestampAttempted = true
+                cachedSignatureTimestamp = getSignatureTimestampOrNull(videoId)
+            }
+            return cachedSignatureTimestamp
+        }
+
+        val mainPlayerResponse =
+            YouTube.player(
+                videoId,
+                playlistId,
+                MAIN_CLIENT,
+                signatureTimestamp = signatureTimestampIfNeeded(MAIN_CLIENT),
+                poToken = mainClientPoToken,
+            ).getOrNull()
+        val audioConfig = mainPlayerResponse?.playerConfig?.audioConfig ?: discoveredAudioConfig
+        val videoDetails = mainPlayerResponse?.videoDetails ?: discoveredVideoDetails
+        val playbackTracking = mainPlayerResponse?.playbackTracking ?: discoveredPlaybackTracking
+
+        val remainingClients: Array<YouTubeClient> = arrayOf(
+            ANDROID_VR_NO_AUTH,
+            IPADOS,
+            WEB_REMIX,
+            ANDROID_NO_SDK,
+            ANDROID,
+        )
+
+        for (client in remainingClients) {
+            if (client.loginRequired && !isLoggedIn) {
+                Timber.tag(logTag).d("Skipping client ${client.clientName} - requires login but user is not logged in")
+                continue
+            }
+
+            val response = if (client == MAIN_CLIENT && mainPlayerResponse != null) {
+                mainPlayerResponse
+            } else {
+                val clientPoToken = if (client.useWebPoTokens) mainClientPoToken else null
+                YouTube.player(
+                    videoId,
+                    playlistId,
+                    client,
+                    signatureTimestamp = signatureTimestampIfNeeded(client),
+                    poToken = clientPoToken,
+                    setLogin = client == MAIN_CLIENT,
+                )
+                    .getOrNull()
+                    ?: run {
+                        Timber.tag(logTag).d("Skipping client ${client.clientName} - player response failed")
+                        continue
+                    }
+            }
+            fallbackFailure = response.playabilityStatus.reason
+
+            buildPlaybackData(
+                videoId = videoId,
+                response = response,
+                audioQuality = audioQuality,
+                connectivityManager = connectivityManager,
+                poTokenProvider = poTokenProvider,
+                audioConfig = audioConfig,
+                videoDetails = videoDetails,
+                playbackTracking = playbackTracking,
+                clientName = client.clientName,
+                client = client,
+                preferMp4Audio = preferMp4Audio,
+            )?.let { return@runCatching it }
+        }
+
+        val resolvedDetails = videoDetails ?: FallbackAudioResolver.resolveVideoDetails(videoId)
+        val fallbackStream = FallbackAudioResolver.resolveFallbackFormatAndUrl(videoId, resolvedDetails)
+        if (fallbackStream != null) {
+            val (fallbackFormat, fallbackUrl, finalDetails) = fallbackStream
+            Timber.tag(logTag).d("Using FallbackAudioResolver stream for $videoId: $fallbackUrl (${fallbackFormat.mimeType})")
+            return@runCatching PlaybackData(
+                audioConfig = audioConfig,
+                videoDetails = finalDetails,
+                playbackTracking = playbackTracking,
+                format = fallbackFormat,
+                streamUrl = fallbackUrl,
+                streamExpiresInSeconds = 21600,
+                streamClient = "FALLBACK_LOCAL",
+                streamHeaders = emptyMap(),
+            )
+        }
+
+        val errorReason = fallbackFailure ?: mainPlayerResponse?.playabilityStatus?.reason
+        if (mainPlayerResponse?.playabilityStatus?.status != "OK" && errorReason != null) {
+            throw PlaybackException(errorReason, null, PlaybackException.ERROR_CODE_REMOTE_ERROR)
+        }
+        throw Exception("Tidak dapat menemukan URL streaming")
+    }
+
+    private suspend fun buildPlaybackData(
+        videoId: String,
+        response: PlayerResponse,
+        audioQuality: AudioQuality,
+        connectivityManager: ConnectivityManager,
+        poTokenProvider: PoTokenProvider?,
+        audioConfig: PlayerResponse.PlayerConfig.AudioConfig?,
+        videoDetails: PlayerResponse.VideoDetails?,
+        playbackTracking: PlayerResponse.PlaybackTracking?,
+        clientName: String,
+        client: YouTubeClient,
+        preferMp4Audio: Boolean = false,
+    ): PlaybackData? {
+        if (response.playabilityStatus.status != "OK") {
+            Timber.tag(logTag).d("Player response status not OK for $clientName: ${response.playabilityStatus.reason}")
+            return null
+        }
+
+        val format = findFormat(response, audioQuality, connectivityManager, preferMp4Audio)
+            ?: run {
+                Timber.tag(logTag).d("No suitable format found for client: $clientName")
+                return null
+            }
+        // Only web-family clients take a `pot` parameter on their stream URLs;
+        // appending one to guest-client URLs can invalidate them.
+        val streamUrl = findUrlOrNull(format, videoId, response, allowSlowFallback = true)
+            ?.let { addStreamingPoTokenIfNeeded(it, videoId, poTokenProvider, appendPot = client.useWebPoTokens) }
+            ?: run {
+                Timber.tag(logTag).d("Stream URL not found for client: $clientName")
+                return null
+            }
+        val streamExpiresInSeconds = response.streamingData?.expiresInSeconds
+            ?: run {
+                Timber.tag(logTag).d("Stream expiration time not found for client: $clientName")
+                return null
+            }
+
+        // Probe the URL before committing to it. YouTube now serves some
+        // clients URLs that look valid but 403 at fetch time because they are
+        // PO-token gated server-side. Handing such a URL to ExoPlayer
+        // surfaces as ERROR_CODE_IO_BAD_HTTP_STATUS (2004) ("temporarily
+        // unavailable / rate-limited"). A 1-byte ranged GET with the client's
+        // own headers is cheap and lets us fall through to the next client
+        // instead.
+        if (!isStreamUrlUsable(streamUrl, client)) {
+            Timber.tag(logTag).w("Stream URL from $clientName failed probe (POT-gated/expired), trying next client")
+            return null
+        }
+
+        Timber.tag(logTag).d("Using stream from $clientName: ${format.mimeType}, bitrate=${format.bitrate}")
+        return PlaybackData(
+            audioConfig,
+            videoDetails,
+            playbackTracking,
+            format,
+            streamUrl,
+            streamExpiresInSeconds,
+            streamClient = clientName,
+            streamHeaders = streamHeadersForClient(client),
+        )
+    }
+
+    /**
+     * Headers that must accompany every request to a URL served by [client].
+     * googlevideo validates the request fingerprint loosely, but web-family
+     * URLs in particular are sensitive to a missing browser-ish User-Agent
+     * and Referer/Origin; guest clients want their app UA echoed.
+     */
+    fun streamHeadersForClient(client: YouTubeClient): Map<String, String> = buildMap {
+        put("User-Agent", client.userAgent)
+        put("Accept", "*/*")
+        put("Accept-Language", "en-US,en;q=0.9")
+        when (client.clientName) {
+            "WEB_REMIX" -> {
+                put("Referer", "https://music.youtube.com/")
+                put("Origin", "https://music.youtube.com")
+            }
+            else -> {
+                put("Referer", "https://www.youtube.com/")
+                put("Origin", "https://www.youtube.com")
+            }
+        }
+    }
+    /**
+     * Simple player response intended to use for metadata only.
+     * Stream URLs of this response might not work so don't use them.
+     */
+    suspend fun playerResponseForMetadata(
+        videoId: String,
+        playlistId: String? = null,
+    ): Result<PlayerResponse> {
+        Timber.tag(logTag).d("Fetching metadata-only player response for videoId: $videoId using MAIN_CLIENT: ${MAIN_CLIENT.clientName}")
+        val primary = YouTube.player(videoId, playlistId, client = WEB_REMIX)
+        val primaryResp = primary.getOrNull()
+        if (primaryResp?.videoDetails != null) {
+            Timber.tag(logTag).d("Successfully fetched metadata")
+            return Result.success(primaryResp)
+        }
+        val fallbackResp = FallbackAudioResolver.buildMetadataPlayerResponse(videoId)
+        if (fallbackResp != null) {
+            Timber.tag(logTag).d("Successfully fetched metadata via FallbackAudioResolver")
+            return Result.success(fallbackResp)
+        }
+        return primary.onFailure { Timber.tag(logTag).e(it, "Failed to fetch metadata") }
+    }
+
+    private fun findFormat(
+        playerResponse: PlayerResponse,
+        audioQuality: AudioQuality,
+        connectivityManager: ConnectivityManager,
+        preferMp4Audio: Boolean = false,
+    ): PlayerResponse.StreamingData.Format? {
+        Timber.tag(logTag).d("Finding format with audioQuality: $audioQuality, preferMp4Audio: $preferMp4Audio, network metered: ${connectivityManager.isActiveNetworkMetered}")
+
+        val adaptiveFormats = playerResponse.streamingData?.adaptiveFormats
+            ?.filter { it.isAudio && it.isOriginal } ?: emptyList()
+
+        val candidateFormats = if (preferMp4Audio) {
+            val mp4Only = adaptiveFormats.filter { it.mimeType.startsWith("audio/mp4") }
+            if (mp4Only.isNotEmpty()) mp4Only else adaptiveFormats
+        } else {
+            adaptiveFormats
+        }
+
+        val format = candidateFormats.maxByOrNull {
+            it.bitrate * when (audioQuality) {
+                AudioQuality.AUTO -> if (connectivityManager.isActiveNetworkMetered) -1 else 1
+                AudioQuality.HIGH -> 1
+                AudioQuality.LOW -> -1
+            } + (if (preferMp4Audio && it.mimeType.startsWith("audio/mp4")) 20480 else if (!preferMp4Audio && it.mimeType.startsWith("audio/webm")) 10240 else 0)
+        }
+
+        if (format != null) {
+            Timber.tag(logTag).d("Selected format: ${format.mimeType}, bitrate: ${format.bitrate}")
+        } else {
+            Timber.tag(logTag).d("No suitable audio format found")
+        }
+
+        return format
+    }
+
+    /**
+     * Find the best video format (with video and audio) for a given videoId
+     */
+    suspend fun getVideoStreamUrl(
+        videoId: String,
+        playlistId: String? = null,
+        poTokenProvider: PoTokenProvider? = null,
+    ): Result<String> = runCatching {
+        Timber.tag(logTag).d("Fetching video stream URL for videoId: $videoId")
+
+        val signatureTimestamp = getSignatureTimestampOrNull(videoId)
+        val poToken = poTokenProvider?.getPlayerPoToken(videoId)
+
+        // WEB_REMIX video streams are bot-checked (IO_UNSPECIFIED 2000) whether
+        // the user is logged in or not. Prefer the non-auth guest clients first
+        // so video keeps working regardless of session state; MAIN_CLIENT is used
+        // for metadata and as a last resort for age-restricted content.
+        val guestClients = arrayOf(VISIONOS, ANDROID_VR_1_65_10, ANDROID_VR_NO_AUTH, IPADOS, ANDROID_NO_SDK, ANDROID)
+        for (client in guestClients) {
+            val guestResponse = YouTube.player(
+                videoId,
+                playlistId,
+                client,
+                poToken = null,
+                setLogin = false,
+            ).getOrNull() ?: continue
+            val guestMuxed = guestResponse.streamingData?.formats?.filter { it.isVideo }?.maxByOrNull { it.bitrate }
+            val guestFormat = guestMuxed ?: guestResponse.streamingData?.adaptiveFormats
+                ?.filter { it.isVideo }?.maxByOrNull { it.bitrate } ?: continue
+            // Guests never take a `pot` parameter.
+            val guestUrl = findUrlOrNull(guestFormat, videoId, guestResponse)
+            if (guestUrl != null) {
+                Timber.tag(logTag).d("Found video stream from guest client ${client.clientName}")
+                return@runCatching guestUrl
+            }
+        }
+
+        val mainPlayerResponse = YouTube.player(videoId, playlistId, MAIN_CLIENT, signatureTimestamp, poToken).getOrNull()
+
+        // Try muxed formats first (contain both video and audio in one stream)
+        val muxedFormats = mainPlayerResponse?.streamingData?.formats ?: emptyList()
+        val muxedFormat = muxedFormats
+            .filter { it.isVideo }
+            .maxByOrNull { it.bitrate }
+
+        if (muxedFormat != null && mainPlayerResponse != null) {
+            val url = findUrlOrNull(muxedFormat, videoId, mainPlayerResponse)
+                ?.let { addStreamingPoTokenIfNeeded(it, videoId, poTokenProvider, appendPot = true) }
+            if (url != null) {
+                Timber.tag(logTag).d("Found muxed video format: ${muxedFormat.mimeType}, resolution: ${muxedFormat.height}p")
+                return@runCatching url
+            }
+        }
+
+        // Fallback: video-only adaptive format (will have NO audio)
+        val adaptiveFormats = mainPlayerResponse?.streamingData?.adaptiveFormats ?: emptyList()
+        val videoOnlyFormat = adaptiveFormats
+            .filter { it.isVideo }
+            .maxByOrNull { it.bitrate }
+
+        if (videoOnlyFormat != null && mainPlayerResponse != null) {
+            val url = findUrlOrNull(videoOnlyFormat, videoId, mainPlayerResponse)
+                ?.let { addStreamingPoTokenIfNeeded(it, videoId, poTokenProvider, appendPot = true) }
+            if (url != null) {
+                Timber.tag(logTag).d("Found video-only format (no audio): ${videoOnlyFormat.mimeType}, resolution: ${videoOnlyFormat.height}p")
+                return@runCatching url
+            }
+        }
+
+        val fallback = FallbackAudioResolver.resolveFallbackFormatAndUrl(videoId)
+        if (fallback != null) {
+            return@runCatching fallback.second
+        }
+
+        throw Exception("Tidak ada streaming video yang tersedia untuk ID video: $videoId")
+    }
+
+    /**
+     * Cheap check if a video has video playback available without resolving stream URLs.
+     */
+    suspend fun hasVideoPlayback(videoId: String): Boolean {
+        return try {
+            val playerResponse = YouTube.player(videoId, null, MAIN_CLIENT).getOrNull()
+            val streamingData = playerResponse?.streamingData ?: return false
+            val hasMuxed = streamingData.formats?.any { it.isVideo } == true
+            val hasAdaptiveVideo = streamingData.adaptiveFormats.any { it.isVideo }
+            hasMuxed || hasAdaptiveVideo
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Cheap liveness probe for a GVS stream URL: fetch a single byte with a
+     * ranged GET (HEAD is sometimes rejected by googlevideo while ranged
+     * GETs succeed). Only 2xx/206 counts as usable.
+     */
+    private fun isStreamUrlUsable(url: String, client: YouTubeClient): Boolean {
+        if (!url.contains("googlevideo.com") && !url.contains("youtube.com/videoplayback")) {
+            // Not a GVS URL (e.g. local/other source) — accept as-is.
+            return true
+        }
+        return try {
+            val requestBuilder = okhttp3.Request.Builder()
+                .url(url)
+                .header("Range", "bytes=0-0")
+            streamHeadersForClient(client).forEach { (name, value) ->
+                requestBuilder.header(name, value)
+            }
+            httpClient.newCall(requestBuilder.build()).execute().use { response ->
+                val ok = response.isSuccessful
+                if (!ok) {
+                    Timber.tag(logTag).d("Stream probe got HTTP ${response.code}")
+                }
+                ok
+            }
+        } catch (e: Exception) {
+            Timber.tag(logTag).e(e, "Stream probe failed with exception")
+            false
+        }
+    }
+
+    private fun getSignatureTimestampOrNull(videoId: String): Int? {
+        Timber.tag(logTag).d("Getting signature timestamp for videoId: $videoId")
+        return NewPipeExtractor.getSignatureTimestamp(videoId)
+            .onSuccess { Timber.tag(logTag).d("Signature timestamp obtained: $it") }
+            .onFailure {
+                Timber.tag(logTag).e(it, "Failed to get signature timestamp")
+                reportException(it)
+            }
+            .getOrNull()
+    }
+
+    private fun findUrlOrNull(
+        format: PlayerResponse.StreamingData.Format,
+        videoId: String,
+        playerResponse: PlayerResponse,
+        allowSlowFallback: Boolean = true,
+    ): String? {
+        Timber.tag(logTag).d("Finding stream URL for format: ${format.mimeType}, videoId: $videoId")
+
+        // First check if format already has a URL from newPipePlayer
+        if (!format.url.isNullOrEmpty()) {
+            Timber.tag(logTag).d("Using URL from format directly")
+            return format.url
+        }
+        if (!allowSlowFallback) {
+            Timber.tag(logTag).d("Skipping slow URL fallback on primary playback path")
+            return null
+        }
+
+        // Try to get URL using NewPipeExtractor signature deobfuscation
+        val deobfuscatedUrl = NewPipeExtractor.getStreamUrl(format, videoId)
+        if (deobfuscatedUrl != null) {
+            Timber.tag(logTag).d("Stream URL obtained via deobfuscation")
+            return deobfuscatedUrl
+        }
+
+        // Fallback: try to get URL from StreamInfo
+        Timber.tag(logTag).d("Trying StreamInfo fallback for URL")
+        val streamUrls = YouTube.getNewPipeStreamUrls(videoId)
+        if (streamUrls.isNotEmpty()) {
+            val streamUrl = streamUrls.find { it.first == format.itag }?.second
+            if (streamUrl != null) {
+                Timber.tag(logTag).d("Stream URL obtained from StreamInfo")
+                return streamUrl
+            }
+
+            // If exact itag not found, try to find any audio stream
+            val audioStream = streamUrls.find { urlPair ->
+                playerResponse.streamingData?.adaptiveFormats?.any {
+                    it.itag == urlPair.first && it.isAudio
+                } == true
+            }?.second
+
+            if (audioStream != null) {
+                Timber.tag(logTag).d("Audio stream URL obtained from StreamInfo (different itag)")
+                return audioStream
+            }
+        }
+
+        Timber.tag(logTag).e("Failed to get stream URL")
+        return null
+    }
+
+    private suspend fun addStreamingPoTokenIfNeeded(
+        streamUrl: String,
+        videoId: String,
+        poTokenProvider: PoTokenProvider?,
+        appendPot: Boolean,
+    ): String {
+        if (!appendPot) return streamUrl
+        if (!streamUrl.contains("googlevideo.com") && !streamUrl.contains("youtube.com/videoplayback")) {
+            return streamUrl
+        }
+        if (streamUrl.toUri().getQueryParameter("pot") != null) {
+            return streamUrl
+        }
+
+        val streamingPoToken = poTokenProvider?.getStreamingPoToken(videoId)
+        if (streamingPoToken.isNullOrBlank()) {
+            Timber.tag(logTag).w("No streaming PO token available for $videoId; using unmodified GVS URL")
+            return streamUrl
+        }
+
+        Timber.tag(logTag).d("Appending streaming PO token to GVS URL (length=${streamingPoToken.length})")
+        return streamUrl.toUri().buildUpon()
+            .appendQueryParameter("pot", streamingPoToken)
+            .build()
+            .toString()
+    }
+
+    fun forceRefreshForVideo(videoId: String) {
+        Timber.tag(logTag).d("Force refreshing for videoId: $videoId")
+    }
+}

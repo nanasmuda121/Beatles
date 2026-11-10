@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_glass_wide_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/transparent">
+
+    <!-- Single-layer ultra-clear 3D Liquid Glass Pill Backdrop -->
+    <ImageView
+        android:id="@+id/widget_glass_wide_backdrop"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitXY"
+        android:src="@drawable/widget_liquid_glass_bg"
+        android:contentDescription="@null" />
+
+    <!-- Pill Content Row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp">
+
+        <!-- Circular Album Art Disc with Progress Ring -->
+        <ImageView
+            android:id="@+id/widget_glass_wide_album_art"
+            android:layout_width="46dp"
+            android:layout_height="46dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_widget_music_placeholder"
+            android:contentDescription="@string/widget_album_art" />
+
+        <!-- Song Info + Mini Glass Progress Bar -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="8dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/widget_glass_wide_song_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text="@string/no_song_playing"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:shadowColor="#B3000000"
+                android:shadowDy="1"
+                android:shadowRadius="5" />
+
+            <TextView
+                android:id="@+id/widget_glass_wide_artist_name"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="1dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text="@string/tap_to_open"
+                android:textColor="#F2FFFFFF"
+                android:textSize="11.5sp"
+                android:shadowColor="#B3000000"
+                android:shadowDy="1"
+                android:shadowRadius="4" />
+
+            <ProgressBar
+                android:id="@+id/widget_glass_wide_progress"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent"
+                android:layout_height="3dp"
+                android:layout_marginTop="5dp"
+                android:max="10000"
+                android:progress="0"
+                android:progressDrawable="@drawable/widget_liquid_glass_progress" />
+        </LinearLayout>
+
+        <!-- Glass Pill Control Buttons -->
+        <ImageView
+            android:id="@+id/widget_glass_wide_like_button"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="@drawable/widget_liquid_glass_btn_circle"
+            android:padding="8dp"
+            android:src="@drawable/ic_widget_heart_outline_nav"
+            android:contentDescription="@string/widget_like_button" />
+
+        <ImageView
+            android:id="@+id/widget_glass_wide_previous"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/widget_liquid_glass_btn_circle"
+            android:padding="8dp"
+            android:src="@drawable/ic_widget_skip_previous"
+            android:contentDescription="Sebelumnya" />
+
+        <ImageView
+            android:id="@+id/widget_glass_wide_play_pause"
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/widget_liquid_glass_play_pill"
+            android:padding="10dp"
+            android:src="@drawable/ic_widget_play"
+            android:contentDescription="@string/widget_play_pause" />
+
+        <ImageView
+            android:id="@+id/widget_glass_wide_next"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/widget_liquid_glass_btn_circle"
+            android:padding="8dp"
+            android:src="@drawable/ic_widget_skip_next"
+            android:contentDescription="Berikutnya" />
+
+    </LinearLayout>
+
+</RelativeLayout>

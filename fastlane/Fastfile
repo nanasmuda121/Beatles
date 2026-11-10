@@ -1,0 +1,19 @@
+default_platform(:android)
+
+platform :android do
+  desc "Build FOSS flavor release APK"
+  task :foss do
+    gradle(
+      "assembleFossUniversalRelease",
+      "-PpackageName=com.nanzbeatles.nanas"
+    )
+  end
+
+  desc "Build GMS flavor release APK"
+  task :gms do
+    gradle(
+      "assembleGmsUniversalRelease",
+      "-PpackageName=com.nanzbeatles.nanas"
+    )
+  end
+end

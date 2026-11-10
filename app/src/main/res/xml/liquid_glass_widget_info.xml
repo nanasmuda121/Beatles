@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="250dp"
+    android:minHeight="110dp"
+    android:minResizeWidth="140dp"
+    android:minResizeHeight="60dp"
+    android:maxResizeWidth="530dp"
+    android:maxResizeHeight="240dp"
+    android:updatePeriodMillis="3600000"
+    android:initialLayout="@layout/widget_liquid_glass"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:previewImage="@drawable/widget_liquid_glass_preview"
+    android:previewLayout="@layout/widget_liquid_glass"
+    android:description="@string/widget_liquid_glass_desc"
+    android:targetCellWidth="4"
+    android:targetCellHeight="2"
+    android:widgetFeatures="reconfigurable|configuration_optional">
+</appwidget-provider>

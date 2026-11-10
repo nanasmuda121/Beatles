@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="250dp"
+    android:height="64dp"
+    android:viewportWidth="250"
+    android:viewportHeight="64">
+    <!-- Outer Ultra-Clear Liquid Glass Pill -->
+    <path
+        android:fillColor="#1FFFFFFF"
+        android:strokeColor="#CCFFFFFF"
+        android:strokeWidth="1.5"
+        android:pathData="M32,2 L218,2 A30,30 0 0,1 248,32 L248,32 A30,30 0 0,1 218,62 L32,62 A30,30 0 0,1 2,32 L2,32 A30,30 0 0,1 32,2 Z"/>
+    <!-- Top Specular Glint -->
+    <path
+        android:fillColor="#38FFFFFF"
+        android:pathData="M32,4 L218,4 A28,28 0 0,1 244,26 L6,26 A28,28 0 0,1 32,4 Z"/>
+    <!-- Circular Album Art Disc -->
+    <path
+        android:fillColor="#3864E9FF"
+        android:strokeColor="#EEFFFFFF"
+        android:strokeWidth="1.5"
+        android:pathData="M32,32 m-20,0 a20,20 0 1,1 40,0 a20,20 0 1,1 -40,0"/>
+    <!-- Song Title & Artist -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M64,20 h95 v9 h-95 z"/>
+    <path
+        android:fillColor="#CCE0F7FF"
+        android:pathData="M64,34 h65 v7 h-65 z"/>
+    <!-- Like & Play Glass Buttons -->
+    <path
+        android:fillColor="#22FFFFFF"
+        android:strokeColor="#99FFFFFF"
+        android:strokeWidth="1"
+        android:pathData="M182,32 m-14,0 a14,14 0 1,1 28,0 a14,14 0 1,1 -28,0"/>
+    <path
+        android:fillColor="#3864E9FF"
+        android:strokeColor="#EEFFFFFF"
+        android:strokeWidth="1.2"
+        android:pathData="M218,32 m-16,0 a16,16 0 1,1 32,0 a16,16 0 1,1 -32,0"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M215,27 l8,5 l-8,5 z"/>
+</vector>

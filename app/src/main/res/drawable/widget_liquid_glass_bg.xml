@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Ultra-clear crystal water glass body (~8% opacity so wallpaper shines through) -->
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="28dp" />
+            <gradient
+                android:angle="135"
+                android:startColor="#24FFFFFF"
+                android:centerColor="#0FFFFFFF"
+                android:endColor="#1F64E9FF"
+                android:type="linear" />
+            <stroke
+                android:width="1.5dp"
+                android:color="#B8FFFFFF" />
+        </shape>
+    </item>
+    <!-- Top curved lens specular highlight -->
+    <item
+        android:top="1dp"
+        android:left="1.5dp"
+        android:right="1.5dp"
+        android:bottom="60dp">
+        <shape android:shape="rectangle">
+            <corners
+                android:topLeftRadius="27dp"
+                android:topRightRadius="27dp"
+                android:bottomLeftRadius="18dp"
+                android:bottomRightRadius="18dp" />
+            <gradient
+                android:angle="270"
+                android:startColor="#4DFFFFFF"
+                android:endColor="#00FFFFFF"
+                android:type="linear" />
+        </shape>
+    </item>
+    <!-- Subtle bottom water caustic rim reflection -->
+    <item
+        android:top="68dp"
+        android:left="2dp"
+        android:right="2dp"
+        android:bottom="1dp">
+        <shape android:shape="rectangle">
+            <corners
+                android:topLeftRadius="14dp"
+                android:topRightRadius="14dp"
+                android:bottomLeftRadius="27dp"
+                android:bottomRightRadius="27dp" />
+            <gradient
+                android:angle="90"
+                android:startColor="#2864E9FF"
+                android:endColor="#0064E9FF"
+                android:type="linear" />
+        </shape>
+    </item>
+</layer-list>

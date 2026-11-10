@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="250dp"
+    android:height="115dp"
+    android:viewportWidth="250"
+    android:viewportHeight="115">
+    <!-- Outer Ultra-Clear Liquid Glass Rounded Card -->
+    <path
+        android:fillColor="#1FFFFFFF"
+        android:strokeColor="#CCFFFFFF"
+        android:strokeWidth="1.5"
+        android:pathData="M24,2 L226,2 A22,22 0 0,1 248,24 L248,91 A22,22 0 0,1 226,113 L24,113 A22,22 0 0,1 2,91 L2,24 A22,22 0 0,1 24,2 Z"/>
+    <!-- Top Specular Glint Dome -->
+    <path
+        android:fillColor="#38FFFFFF"
+        android:pathData="M24,3 L226,3 A20,20 0 0,1 246,23 L246,42 L4,42 L4,23 A20,20 0 0,1 24,3 Z"/>
+    <!-- Album Art Glass Frame -->
+    <path
+        android:fillColor="#2864E9FF"
+        android:strokeColor="#CCFFFFFF"
+        android:strokeWidth="1.2"
+        android:pathData="M24,16 L60,16 A10,10 0 0,1 70,26 L70,62 A10,10 0 0,1 60,72 L24,72 A10,10 0 0,1 14,62 L14,26 A10,10 0 0,1 24,16 Z"/>
+    <!-- Song Title Bar -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M82,24 h110 v10 h-110 z"/>
+    <!-- Artist Bar -->
+    <path
+        android:fillColor="#CCE0F7FF"
+        android:pathData="M82,40 h76 v8 h-76 z"/>
+    <!-- Liquid Glass Progress Bar -->
+    <path
+        android:fillColor="#33FFFFFF"
+        android:pathData="M82,58 h150 v4 h-150 z"/>
+    <path
+        android:fillColor="#64E9FF"
+        android:pathData="M82,58 h92 v4 h-92 z"/>
+    <!-- Control Glass Pills -->
+    <path
+        android:fillColor="#22FFFFFF"
+        android:strokeColor="#99FFFFFF"
+        android:strokeWidth="1"
+        android:pathData="M48,92 m-12,0 a12,12 0 1,1 24,0 a12,12 0 1,1 -24,0"/>
+    <path
+        android:fillColor="#22FFFFFF"
+        android:strokeColor="#99FFFFFF"
+        android:strokeWidth="1"
+        android:pathData="M96,92 m-13,0 a13,13 0 1,1 26,0 a13,13 0 1,1 -26,0"/>
+    <path
+        android:fillColor="#3864E9FF"
+        android:strokeColor="#EEFFFFFF"
+        android:strokeWidth="1.3"
+        android:pathData="M145,92 m-15,0 a15,15 0 1,1 30,0 a15,15 0 1,1 -30,0"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M142,87 l8,5 l-8,5 z"/>
+    <path
+        android:fillColor="#22FFFFFF"
+        android:strokeColor="#99FFFFFF"
+        android:strokeWidth="1"
+        android:pathData="M194,92 m-13,0 a13,13 0 1,1 26,0 a13,13 0 1,1 -26,0"/>
+</vector>
