@@ -229,11 +229,6 @@
                 android:resource="@xml/provider_paths" />
         </provider>
 
-        <provider
-            android:name=".hardware.car.CarConnectionStubProvider"
-            android:authorities="androidx.car.app.connection"
-            android:exported="false" />
-
         <activity
             android:name="com.yalantis.ucrop.UCropActivity"
             android:exported="false"

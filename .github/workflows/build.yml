@@ -104,11 +104,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload v2.0.0 "release-artifact/${{ matrix.asset }}" --clobber || \
-          gh release create v2.0.0 "release-artifact/${{ matrix.asset }}" --title "NanzBeatles v2.0.0" --notes "### NanzBeatles v2.0.0 (Beatles)" || true
+          version_name="$(grep -E 'versionName = "[^"]+"' app/build.gradle.kts | head -n1 | cut -d'"' -f2)"
+          tag_name="v${version_name}"
+          gh release upload "$tag_name" "release-artifact/${{ matrix.asset }}" --clobber || \
+          gh release create "$tag_name" "release-artifact/${{ matrix.asset }}" --title "NanzBeatles $tag_name" --notes "### NanzBeatles $tag_name (Beatles)" || true
 
-          gh release upload v2.0.0 "release-artifact/${{ matrix.asset }}" --clobber --repo nanasmuda121/update-NanzBeatles || \
-          gh release create v2.0.0 "release-artifact/${{ matrix.asset }}" --title "NanzBeatles v2.0.0" --notes "### NanzBeatles v2.0.0 (Beatles)" --repo nanasmuda121/update-NanzBeatles || true
+          gh release upload "$tag_name" "release-artifact/${{ matrix.asset }}" --clobber --repo nanasmuda121/update-NanzBeatles || \
+          gh release create "$tag_name" "release-artifact/${{ matrix.asset }}" --title "NanzBeatles $tag_name" --notes "### NanzBeatles $tag_name (Beatles)" --repo nanasmuda121/update-NanzBeatles || true
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
