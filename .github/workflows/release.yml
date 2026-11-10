@@ -101,8 +101,8 @@ jobs:
           fi
 
           if [ -z "${previous_tag}" ]; then
-            echo "Could not find a previous published GitHub Release. Provide previous_tag when running manually." >&2
-            exit 1
+            echo "No previous published release found; setting previous_tag to initial."
+            previous_tag="initial"
           fi
 
           echo "previous_tag=${previous_tag}" >> "$GITHUB_OUTPUT"

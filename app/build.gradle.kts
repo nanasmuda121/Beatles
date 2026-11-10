@@ -130,7 +130,7 @@ android {
         }
         getByName("tv") {
             kotlin.srcDirs("src/tv/kotlin")
-            manifest.srcFile("src/tv/AndroidManifest.xml")
+            res.srcDirs("src/tv/res")
         }
     }
 
@@ -181,7 +181,7 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            isCrunchPngs = false
+            isCrunchPngs = true
             isDebuggable = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -321,19 +321,38 @@ dependencies {
     implementation(libs.guava)
     implementation(libs.coroutines.guava)
     implementation(libs.concurrent.futures)
-    implementation(libs.timber)
-    implementation(libs.bundles.activity)
-    implementation(libs.appcompat)
-    implementation(libs.browser)
 
-    implementation(libs.bundles.compose)
-    implementation(libs.bundles.lifecycle)
-    implementation(libs.bundles.navigation)
-    implementation(libs.materialKolor)
-    implementation(libs.shimmer)
+    implementation(libs.activity)
+    implementation(libs.hilt.navigation)
+    implementation(libs.datastore)
+
+    implementation(libs.compose.runtime)
+    implementation(libs.compose.foundation)
+    implementation(libs.compose.ui)
+    implementation(libs.compose.ui.util)
+    implementation(libs.compose.ui.tooling)
+    implementation(libs.compose.animation)
+    implementation(libs.compose.reorderable)
+
+    implementation(libs.viewmodel)
+    implementation(libs.viewmodel.compose)
+
+    implementation(libs.material3)
+    implementation("androidx.compose.material:material-icons-extended:1.6.8")
     implementation(libs.palette)
+    implementation(libs.materialKolor)
 
-    implementation(libs.bundles.media3)
+    implementation(libs.appcompat)
+
+    implementation(libs.coil)
+    implementation(libs.coil.network.okhttp)
+
+    implementation(libs.ucrop)
+
+    implementation(libs.shimmer)
+
+    implementation(libs.media3)
+    implementation(libs.media3.ui)
     implementation(libs.media3.session)
     implementation(libs.media3.okhttp)
 
@@ -346,38 +365,54 @@ dependencies {
     implementation(libs.kuromoji.ipadic)
     implementation(libs.tinypinyin)
     ksp(libs.room.compiler)
+    implementation(libs.room.ktx)
 
-    implementation(libs.bundles.hilt)
+    implementation(libs.apache.lang3)
+
+    implementation(libs.hilt)
+    implementation(libs.jsoup)
     ksp(libs.hilt.compiler)
 
-    implementation(libs.bundles.ktor)
-    implementation(libs.bundles.coil)
-    implementation(libs.bundles.datastore)
+    // Ktor for networking
+    implementation(libs.browser)
+    implementation(libs.ktor.client.core)
+    implementation(libs.ktor.client.cio)
+    implementation(libs.ktor.client.okhttp)
+    implementation(libs.ktor.client.content.negotiation)
+    implementation(libs.ktor.serialization.json)
 
-    implementation(libs.apacheLang3)
-    implementation(libs.brotli)
-    implementation(libs.jsoup)
-    implementation(libs.newpipeextractor)
-    implementation(libs.json)
-    implementation(libs.ucrop)
-    implementation(libs.reorderable)
-
-    coreLibraryDesugaring(libs.desugaring)
+    // VOSK offline speech recognition (wake word detection)
+    implementation("com.alphacephei:vosk-android:0.3.75") {
+        exclude(group = "net.java.dev.jna")
+    }
+    // Force latest JNA to fix Android 16 (SDK 36) UnsatisfiedLinkError
+    // in com.sun.jna.Pointer peer field resolution
+    implementation("net.java.dev.jna:jna:5.19.1@aar")
 
     implementation(project(":innertube"))
+    implementation(project(":auravideo"))
     implementation(project(":kugou"))
     implementation(project(":lrclib"))
-    implementation(project(":auravideo"))
     implementation(project(":lastfm"))
     implementation(project(":betterlyrics"))
+    implementation(project(":musixmatch"))
     implementation(project(":simpmusic"))
     implementation(project(":shazamkit"))
     implementation(project(":rush"))
     implementation(project(":paxsenix"))
-    implementation(project(":musixmatch"))
 
-    implementation(libs.mlkit)
-    implementation(libs.protobuf)
+    // Protobuf for message serialization (lite version for Android)
+    implementation(libs.protobuf.javalite)
+    implementation(libs.protobuf.kotlin.lite)
 
-    testImplementation(libs.junit)
+    coreLibraryDesugaring(libs.desugaring)
+
+    implementation(libs.timber)
+
+    // Android TV support
+    implementation("androidx.leanback:leanback:1.2.0-alpha04")
+    implementation("androidx.leanback:leanback-preference:1.2.0-alpha04")
+    implementation("androidx.tv:tv-material:1.0.0-beta01")
+    implementation("androidx.tv:tv-foundation:1.0.0-beta01")
+    implementation("androidx.tvprovider:tvprovider:1.0.0")
 }
