@@ -543,6 +543,13 @@ val AutoTranslateLyricsKey = booleanPreferencesKey("autoTranslateLyrics")
 val AutoTranslateLyricsMismatchKey = booleanPreferencesKey("autoTranslateLyricsMismatch")
 val TranslateModeKey = stringPreferencesKey("translateMode")
 val TranslateLanguageKey = stringPreferencesKey("translateLanguage")
+val LyricsTranslationProviderKey = stringPreferencesKey("lyricsTranslationProvider")
+
+const val LYRICS_TRANSLATION_PROVIDER_AUTO = "Auto"
+const val LYRICS_TRANSLATION_PROVIDER_GOOGLE = "Google"
+const val LYRICS_TRANSLATION_PROVIDER_GOOGLE_CLIENTS5 = "Google (Clients5)"
+const val LYRICS_TRANSLATION_PROVIDER_MYMEMORY = "MyMemory"
+const val LYRICS_TRANSLATION_PROVIDER_AI = "AI Kustom"
 val LyricsGlowEffectKey = booleanPreferencesKey("lyricsGlowEffect")
 val LiquidGlassEffectKey = booleanPreferencesKey("liquidGlassEffect")
 val LiquidGlassBlurRadiusKey = floatPreferencesKey("liquidGlassBlurRadius")

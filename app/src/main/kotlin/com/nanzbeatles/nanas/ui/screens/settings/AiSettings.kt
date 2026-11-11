@@ -52,6 +52,7 @@ import com.nanzbeatles.nanas.constants.OpenRouterBaseUrlKey
 import com.nanzbeatles.nanas.constants.OpenRouterModelKey
 import com.nanzbeatles.nanas.constants.TranslateLanguageKey
 import com.nanzbeatles.nanas.constants.TranslateModeKey
+import com.nanzbeatles.nanas.constants.LyricsTranslationProviderKey
 import com.nanzbeatles.nanas.ui.component.DefaultDialog
 import com.nanzbeatles.nanas.ui.component.EditTextPreference
 import com.nanzbeatles.nanas.ui.component.EnumDialog
@@ -83,6 +84,15 @@ fun AiSettings(
     var autoTranslateLyricsMismatch by rememberPreference(AutoTranslateLyricsMismatchKey, false)
     var translateLanguage by rememberPreference(TranslateLanguageKey, "id")
     var translateMode by rememberPreference(TranslateModeKey, "Literal")
+    var lyricsTranslationProvider by rememberPreference(LyricsTranslationProviderKey, "Auto")
+
+    val translationProviders = listOf(
+        "Auto",
+        "Google",
+        "Google (Clients5)",
+        "MyMemory",
+        "AI Kustom"
+    )
 
     val aiProviders = mapOf(
         "OpenRouter" to "https://openrouter.ai/api/v1/chat/completions",
@@ -148,6 +158,30 @@ fun AiSettings(
     var showBaseUrlDialog by rememberSaveable { mutableStateOf(false) }
     var showModelDialog by rememberSaveable { mutableStateOf(false) }
     var showCustomModelInput by rememberSaveable { mutableStateOf(false) }
+    var showTranslationProviderDialog by rememberSaveable { mutableStateOf(false) }
+
+    if (showTranslationProviderDialog) {
+        EnumDialog(
+            onDismiss = { showTranslationProviderDialog = false },
+            onSelect = {
+                lyricsTranslationProvider = it
+                showTranslationProviderDialog = false
+            },
+            title = "Penyedia Terjemahan Lirik",
+            current = lyricsTranslationProvider,
+            values = translationProviders,
+            valueText = { provider ->
+                when (provider) {
+                    "Auto" -> "Otomatis (Multi-Provider Fallback - Rekomendasi)"
+                    "Google" -> "Google Translate (translate.googleapis.com)"
+                    "Google (Clients5)" -> "Google Translate (Mirror clients5)"
+                    "MyMemory" -> "MyMemory Translate API"
+                    "AI Kustom" -> "Model AI Kustom (OpenRouter / LLM)"
+                    else -> provider
+                }
+            }
+        )
+    }
 
     if (showProviderDialog) {
         EnumDialog(
@@ -287,6 +321,31 @@ fun AiSettings(
                 )
             )
         )
+            Material3SettingsGroup(
+                title = "Penyedia Terjemahan Lirik",
+                items = listOf(
+                    Material3SettingsItem(
+                        icon = painterResource(R.drawable.language),
+                        title = { Text("Penyedia Terjemahan Lirik") },
+                        description = {
+                            Text(
+                                when (lyricsTranslationProvider) {
+                                    "Auto" -> "Otomatis (Multi-Provider Fallback - Rekomendasi)"
+                                    "Google" -> "Google Translate (translate.googleapis.com)"
+                                    "Google (Clients5)" -> "Google Translate (Mirror clients5)"
+                                    "MyMemory" -> "MyMemory Translate API"
+                                    "AI Kustom" -> "Model AI Kustom (OpenRouter / LLM)"
+                                    else -> lyricsTranslationProvider
+                                }
+                            )
+                        },
+                        onClick = { showTranslationProviderDialog = true }
+                    )
+                )
+            )
+
+            Spacer(modifier = Modifier.height(27.dp))
+
             Material3SettingsGroup(
                 title = stringResource(R.string.ai_provider),
                 items = listOf(

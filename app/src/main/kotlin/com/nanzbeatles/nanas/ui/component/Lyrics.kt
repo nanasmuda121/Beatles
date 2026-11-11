@@ -162,6 +162,7 @@ import com.nanzbeatles.nanas.constants.AutoTranslateLyricsKey
 import com.nanzbeatles.nanas.constants.AutoTranslateLyricsMismatchKey
 import com.nanzbeatles.nanas.constants.TranslateLanguageKey
 import com.nanzbeatles.nanas.constants.TranslateModeKey
+import com.nanzbeatles.nanas.constants.LyricsTranslationProviderKey
 import com.nanzbeatles.nanas.constants.PlayerBackgroundStyleKey
 import com.nanzbeatles.nanas.db.entities.LyricsEntity.Companion.LYRICS_NOT_FOUND
 import com.nanzbeatles.nanas.lyrics.LyricsEntry
@@ -290,6 +291,7 @@ fun OriginalLyrics(
     val autoTranslateLyricsMismatch by rememberPreference(AutoTranslateLyricsMismatchKey, false)
     val translateLanguage by rememberPreference(TranslateLanguageKey, "id")
     val translateMode by rememberPreference(TranslateModeKey, "Literal")
+    val translationProvider by rememberPreference(LyricsTranslationProviderKey, "Auto")
     
     val scope = rememberCoroutineScope()
 
@@ -565,7 +567,7 @@ fun OriginalLyrics(
     }
     
     // Listen for manual trigger
-    LaunchedEffect(showLyrics, lines.size, openRouterApiKey, translateLanguage, translateMode) {
+    LaunchedEffect(showLyrics, lines.size, openRouterApiKey, translateLanguage, translateMode, translationProvider) {
         LyricsTranslationHelper.manualTrigger.collect {
             if (showLyrics && lines.isNotEmpty()) {
                 LyricsTranslationHelper.translateLyrics(
@@ -576,13 +578,14 @@ fun OriginalLyrics(
                     model = openRouterModel,
                     mode = translateMode,
                     scope = scope,
-                    context = context
+                    context = context,
+                    provider = translationProvider
                 )
             }
         }
     }
 
-    LaunchedEffect(lines, autoTranslateLyrics, autoTranslateLyricsMismatch, openRouterApiKey, translateMode, translateLanguage) {
+    LaunchedEffect(lines, autoTranslateLyrics, autoTranslateLyricsMismatch, openRouterApiKey, translateMode, translateLanguage, translationProvider) {
         if (lines.isNotEmpty()) {
             // Reset and clear translations if auto-translate is disabled
             if (!autoTranslateLyrics) {
@@ -593,9 +596,9 @@ fun OriginalLyrics(
             
             // First, try to apply cached translations
             val targetLang = if (autoTranslateLyricsMismatch) java.util.Locale.getDefault().language else translateLanguage
-            val hasCached = LyricsTranslationHelper.applyCachedTranslations(lines, translateMode, targetLang)
+            val hasCached = LyricsTranslationHelper.applyCachedTranslations(lines, translateMode, targetLang, translationProvider)
             
-            // If no cache and auto-translate is enabled, translate (uses built-in Default API or custom AI key)
+            // If no cache and auto-translate is enabled, translate (uses selected provider or custom AI key)
             if (!hasCached && autoTranslateLyrics) {
                 val needsTranslation = lines.any { it.translatedTextFlow.value == null && it.text.isNotBlank() }
                 if (needsTranslation) {
@@ -630,7 +633,8 @@ fun OriginalLyrics(
                             model = openRouterModel,
                             mode = translateMode,
                             scope = scope,
-                            context = context
+                            context = context,
+                            provider = translationProvider
                         )
                     }
                 }

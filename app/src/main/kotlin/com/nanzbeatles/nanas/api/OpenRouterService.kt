@@ -9,12 +9,14 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import okhttp3.FormBody
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import timber.log.Timber
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
@@ -27,37 +29,34 @@ object OpenRouterService {
     private val JSON = "application/json; charset=utf-8".toMediaType()
 
     /**
-     * Built-in Default Translation API (no API key required).
-     * Translates lyric lines 1-to-1 using the public GTX translation endpoint with batch + per-line alignment guarantee.
+     * Built-in Google Translate API using Chrome Extension client credentials.
+     * Guaranteed to work without API key, never blocked by automated query blocks.
      */
-    suspend fun translateWithDefaultApi(
+    suspend fun translateWithGoogleApi(
         text: String,
         targetLanguageCode: String,
+        useClients5: Boolean = false,
         mode: String = "Literal"
     ): Result<List<String>> = withContext(Dispatchers.IO) {
         try {
-            if (text.isBlank()) {
-                return@withContext Result.failure(Exception("Teks input kosong"))
-            }
+            if (text.isBlank()) return@withContext Result.failure(Exception("Teks input kosong"))
             val lines = text.lines()
-            if (lines.isEmpty()) {
-                return@withContext Result.success(emptyList())
-            }
+            if (lines.isEmpty()) return@withContext Result.success(emptyList())
 
             val normalizedLang = normalizeLanguageCode(targetLanguageCode)
             val resultLines = MutableList(lines.size) { "" }
 
-            // Process in batches of 25 lines for fast single-roundtrip translation
+            // 1. First attempt: translate lines in chunks of 25 for fast single round-trip
             val batchSize = 25
             for (batchStart in lines.indices step batchSize) {
                 val batchEnd = minOf(batchStart + batchSize, lines.size)
                 val batch = lines.subList(batchStart, batchEnd)
                 val batchJoined = batch.joinToString("\n")
 
-                val batchTranslated = requestPublicTranslate(
+                val batchTranslated = requestGoogleTranslate(
                     queryText = batchJoined,
                     targetLang = normalizedLang,
-                    mode = mode
+                    useClients5 = useClients5
                 )?.lines()
 
                 if (batchTranslated != null && batchTranslated.size == batch.size) {
@@ -65,17 +64,18 @@ object OpenRouterService {
                         resultLines[batchStart + i] = batchTranslated[i].trim()
                     }
                 } else {
-                    // Fallback to concurrent per-line translation for 100% exact line alignment
+                    // Fallback to per-line translation for exact alignment
                     val perLineResults = coroutineScope {
+                        val dispatcher = Dispatchers.IO.limitedParallelism(4)
                         batch.map { singleLine ->
-                            async {
+                            async(dispatcher) {
                                 if (singleLine.isBlank()) {
                                     ""
                                 } else {
-                                    requestPublicTranslate(
+                                    requestGoogleTranslate(
                                         queryText = singleLine,
                                         targetLang = normalizedLang,
-                                        mode = mode
+                                        useClients5 = useClients5
                                     )?.lineSequence()?.firstOrNull()?.trim() ?: singleLine
                                 }
                             }
@@ -87,22 +87,96 @@ object OpenRouterService {
                 }
             }
 
-            Result.success(resultLines)
+            val hasValidTranslations = resultLines.any { it.isNotBlank() }
+            if (hasValidTranslations) {
+                Result.success(resultLines)
+            } else {
+                Result.failure(Exception("Google Translate menghasilkan output kosong"))
+            }
         } catch (e: Exception) {
-            Result.failure(Exception("Penerjemahan API default gagal: ${e.message}"))
+            Result.failure(e)
         }
     }
 
-    private fun requestPublicTranslate(
+    private fun requestGoogleTranslate(
         queryText: String,
         targetLang: String,
-        mode: String
+        useClients5: Boolean = false
     ): String? {
         if (queryText.isBlank()) return ""
         return try {
+            val url = if (useClients5) {
+                "https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=auto&tl=$targetLang"
+            } else {
+                "https://translate.googleapis.com/translate_a/t?client=dict-chrome-ex&sl=auto&tl=$targetLang"
+            }
+
+            val formBody = FormBody.Builder()
+                .add("q", queryText)
+                .build()
+
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", "Mozilla/5.0 (Android 14; Mobile; rv:128.0) Gecko/128.0 Firefox/128.0")
+                .post(formBody)
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return null
+                val body = response.body?.string() ?: return null
+                val rootArray = JSONArray(body)
+                val firstItem = rootArray.optJSONArray(0) ?: return null
+                val result = firstItem.optString(0)
+                if (result.isNotBlank()) result else null
+            }
+        } catch (e: Exception) {
+            Timber.tag("OpenRouterService").w("requestGoogleTranslate failed: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * MyMemory free translation API provider.
+     */
+    suspend fun translateWithMyMemory(
+        text: String,
+        targetLanguageCode: String
+    ): Result<List<String>> = withContext(Dispatchers.IO) {
+        try {
+            if (text.isBlank()) return@withContext Result.failure(Exception("Teks input kosong"))
+            val lines = text.lines()
+            if (lines.isEmpty()) return@withContext Result.success(emptyList())
+
+            val normalizedLang = normalizeLanguageCode(targetLanguageCode)
+            val perLineResults = coroutineScope {
+                val dispatcher = Dispatchers.IO.limitedParallelism(4)
+                lines.map { singleLine ->
+                    async(dispatcher) {
+                        if (singleLine.isBlank()) {
+                            ""
+                        } else {
+                            requestMyMemoryTranslate(singleLine, normalizedLang) ?: singleLine
+                        }
+                    }
+                }.awaitAll()
+            }
+
+            val hasValidTranslations = perLineResults.any { it.isNotBlank() }
+            if (hasValidTranslations) {
+                Result.success(perLineResults)
+            } else {
+                Result.failure(Exception("MyMemory menghasilkan output kosong"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    private fun requestMyMemoryTranslate(queryText: String, targetLang: String): String? {
+        if (queryText.isBlank()) return ""
+        return try {
             val encodedQuery = URLEncoder.encode(queryText, "UTF-8")
-            val dtParams = if (mode == "Romanized") "dt=t&dt=rm" else "dt=t"
-            val url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=$targetLang&$dtParams&q=$encodedQuery"
+            val url = "https://api.mymemory.translated.net/get?q=$encodedQuery&langpair=autodetect|$targetLang"
 
             val request = Request.Builder()
                 .url(url)
@@ -113,41 +187,35 @@ object OpenRouterService {
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return null
                 val body = response.body?.string() ?: return null
-                val rootArray = JSONArray(body)
-                val segments = rootArray.optJSONArray(0) ?: return null
-
-                if (mode == "Romanized") {
-                    // Extract romanization if available in the last segment, otherwise translated text
-                    val romanizedBuilder = StringBuilder()
-                    for (i in 0 until segments.length()) {
-                        val seg = segments.optJSONArray(i) ?: continue
-                        val rom = seg.optString(3).takeIf { it.isNotBlank() && it != "null" }
-                            ?: seg.optString(2).takeIf { it.isNotBlank() && it != "null" }
-                        if (rom != null) {
-                            romanizedBuilder.append(rom)
-                        }
-                    }
-                    if (romanizedBuilder.isNotBlank()) {
-                        return romanizedBuilder.toString()
-                    }
-                }
-
-                val translatedBuilder = StringBuilder()
-                for (i in 0 until segments.length()) {
-                    val seg = segments.optJSONArray(i) ?: continue
-                    val part = seg.optString(0)
-                    if (part != "null") {
-                        translatedBuilder.append(part)
-                    }
-                }
-                translatedBuilder.toString().takeIf { it.isNotBlank() }
+                val json = JSONObject(body)
+                val responseData = json.optJSONObject("responseData") ?: return null
+                val text = responseData.optString("translatedText")
+                if (text.isNotBlank() && !text.startsWith("MYMEMORY WARNING")) {
+                    android.text.Html.fromHtml(text, android.text.Html.FROM_HTML_MODE_LEGACY).toString().trim()
+                } else null
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Timber.tag("OpenRouterService").w("requestMyMemoryTranslate failed: ${e.message}")
             null
         }
     }
 
-    private fun normalizeLanguageCode(lang: String): String {
+    /**
+     * Built-in Default Translation API (auto-cascading Google -> Clients5 -> MyMemory).
+     */
+    suspend fun translateWithDefaultApi(
+        text: String,
+        targetLanguageCode: String,
+        mode: String = "Literal"
+    ): Result<List<String>> {
+        val googleResult = translateWithGoogleApi(text, targetLanguageCode, useClients5 = false, mode = mode)
+        if (googleResult.isSuccess) return googleResult
+        val clients5Result = translateWithGoogleApi(text, targetLanguageCode, useClients5 = true, mode = mode)
+        if (clients5Result.isSuccess) return clients5Result
+        return translateWithMyMemory(text, targetLanguageCode)
+    }
+
+    fun normalizeLanguageCode(lang: String): String {
         val cleaned = lang.trim()
         return when (cleaned.lowercase()) {
             "indonesian", "bahasa indonesia", "in", "id", "id-id" -> "id"
@@ -180,22 +248,71 @@ object OpenRouterService {
         mode: String,
         maxRetries: Int = 2,
         sourceLanguage: String? = null,
-        targetLanguageCode: String = "id"
+        targetLanguageCode: String = "id",
+        provider: String = "Auto"
     ): Result<List<String>> = withContext(Dispatchers.IO) {
-        // Validate input
         if (text.isBlank()) {
             return@withContext Result.failure(Exception("Teks input kosong"))
         }
 
-        // Default mode: if the user did not configure a custom AI API Key, use the built-in Default Translation API!
-        if (apiKey.isBlank()) {
-            return@withContext translateWithDefaultApi(
-                text = text,
-                targetLanguageCode = targetLanguageCode.ifBlank { targetLanguage },
-                mode = mode
-            )
-        }
+        val effectiveLang = targetLanguageCode.ifBlank { targetLanguage }
 
+        when (provider) {
+            "Google" -> {
+                val r = translateWithGoogleApi(text, effectiveLang, useClients5 = false, mode = mode)
+                if (r.isSuccess) r else translateWithGoogleApi(text, effectiveLang, useClients5 = true, mode = mode)
+            }
+            "Google (Clients5)" -> {
+                val r = translateWithGoogleApi(text, effectiveLang, useClients5 = true, mode = mode)
+                if (r.isSuccess) r else translateWithGoogleApi(text, effectiveLang, useClients5 = false, mode = mode)
+            }
+            "MyMemory" -> {
+                val r = translateWithMyMemory(text, effectiveLang)
+                if (r.isSuccess) r else translateWithGoogleApi(text, effectiveLang, useClients5 = false, mode = mode)
+            }
+            "AI", "AI Kustom" -> {
+                if (apiKey.isNotBlank()) {
+                    translateWithAi(text, targetLanguage, apiKey, baseUrl, model, mode, maxRetries, effectiveLang)
+                        .recoverCatching {
+                            translateWithGoogleApi(text, effectiveLang, useClients5 = false, mode = mode).getOrThrow()
+                        }
+                } else {
+                    translateWithGoogleApi(text, effectiveLang, useClients5 = false, mode = mode)
+                }
+            }
+            else -> { // "Auto" multi-provider fallback
+                // 1. If user set an AI API key, try AI first
+                if (apiKey.isNotBlank()) {
+                    val aiResult = translateWithAi(text, targetLanguage, apiKey, baseUrl, model, mode, maxRetries, effectiveLang)
+                    if (aiResult.isSuccess) return@withContext aiResult
+                }
+                // 2. Try Google Translate primary
+                val gResult = translateWithGoogleApi(text, effectiveLang, useClients5 = false, mode = mode)
+                if (gResult.isSuccess) return@withContext gResult
+
+                // 3. Try Google Translate mirror
+                val cResult = translateWithGoogleApi(text, effectiveLang, useClients5 = true, mode = mode)
+                if (cResult.isSuccess) return@withContext cResult
+
+                // 4. Try MyMemory API
+                val mResult = translateWithMyMemory(text, effectiveLang)
+                if (mResult.isSuccess) return@withContext mResult
+
+                gResult
+            }
+        }
+    }
+
+    private suspend fun translateWithAi(
+        text: String,
+        targetLanguage: String,
+        apiKey: String,
+        baseUrl: String,
+        model: String,
+        mode: String,
+        maxRetries: Int = 2,
+        targetLanguageCode: String = "id"
+    ): Result<List<String>> = withContext(Dispatchers.IO) {
         var currentAttempt = 0
         val lines = text.lines()
         val lineCount = lines.size

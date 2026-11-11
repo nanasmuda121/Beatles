@@ -115,6 +115,7 @@ import com.nanzbeatles.nanas.constants.OpenRouterModelKey
 import com.nanzbeatles.nanas.constants.ShowIntervalIndicatorKey
 import com.nanzbeatles.nanas.constants.TranslateLanguageKey
 import com.nanzbeatles.nanas.constants.TranslateModeKey
+import com.nanzbeatles.nanas.constants.LyricsTranslationProviderKey
 import com.nanzbeatles.nanas.db.entities.LyricsEntity
 import com.nanzbeatles.nanas.db.entities.LyricsEntity.Companion.LYRICS_NOT_FOUND
 import com.nanzbeatles.nanas.lyrics.LyricsEntry
@@ -211,6 +212,7 @@ fun AppleMusicLyricsView(
     val autoTranslateLyricsMismatch by rememberPreference(AutoTranslateLyricsMismatchKey, false)
     val translateLanguage by rememberPreference(TranslateLanguageKey, "id")
     val translateMode by rememberPreference(TranslateModeKey, "Literal")
+    val translationProvider by rememberPreference(LyricsTranslationProviderKey, "Auto")
 
     LaunchedEffect(lyrics, enabledLanguages, romanizeCyrillicByLine, showIntervalIndicator) {
         lyricsViewModel.processLyrics(lyrics, enabledLanguages, romanizeCyrillicByLine, showIntervalIndicator)
@@ -224,7 +226,7 @@ fun AppleMusicLyricsView(
         }
     }
 
-    LaunchedEffect(showLyrics, lines, openRouterApiKey, openRouterBaseUrl, openRouterModel, translateLanguage, translateMode) {
+    LaunchedEffect(showLyrics, lines, openRouterApiKey, openRouterBaseUrl, openRouterModel, translateLanguage, translateMode, translationProvider) {
         LyricsTranslationHelper.manualTrigger.collectLatest {
             if (showLyrics && lines.isNotEmpty()) {
                 LyricsTranslationHelper.translateLyrics(
@@ -236,6 +238,7 @@ fun AppleMusicLyricsView(
                     mode = translateMode,
                     scope = scope,
                     context = context,
+                    provider = translationProvider,
                 )
             }
         }
@@ -249,7 +252,8 @@ fun AppleMusicLyricsView(
         openRouterBaseUrl,
         openRouterModel,
         translateMode,
-        translateLanguage
+        translateLanguage,
+        translationProvider
     ) {
         if (lines.isNotEmpty()) {
             if (!autoTranslateLyrics) {
@@ -258,7 +262,7 @@ fun AppleMusicLyricsView(
                 return@LaunchedEffect
             }
             val targetLang = if (autoTranslateLyricsMismatch) java.util.Locale.getDefault().language else translateLanguage
-            val hasCached = LyricsTranslationHelper.applyCachedTranslations(lines, translateMode, targetLang)
+            val hasCached = LyricsTranslationHelper.applyCachedTranslations(lines, translateMode, targetLang, translationProvider)
             if (!hasCached && autoTranslateLyrics) {
                 val needsTranslation = lines.any { it.translatedTextFlow.value == null && it.text.isNotBlank() }
                 if (needsTranslation) {
@@ -271,6 +275,7 @@ fun AppleMusicLyricsView(
                         mode = translateMode,
                         scope = scope,
                         context = context,
+                        provider = translationProvider,
                     )
                 }
             }

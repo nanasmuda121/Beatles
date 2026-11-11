@@ -117,6 +117,7 @@ import com.nanzbeatles.nanas.constants.AutoTranslateLyricsKey
 import com.nanzbeatles.nanas.constants.AutoTranslateLyricsMismatchKey
 import com.nanzbeatles.nanas.constants.TranslateLanguageKey
 import com.nanzbeatles.nanas.constants.TranslateModeKey
+import com.nanzbeatles.nanas.constants.LyricsTranslationProviderKey
 import com.nanzbeatles.nanas.db.entities.LyricsEntity
 import com.nanzbeatles.nanas.db.entities.LyricsEntity.Companion.LYRICS_NOT_FOUND
 import com.nanzbeatles.nanas.lyrics.LyricsResyncHelper
@@ -198,6 +199,7 @@ fun EnhancedLyricsView(
     val autoTranslateLyricsMismatch by rememberPreference(AutoTranslateLyricsMismatchKey, false)
     val translateLanguage by rememberPreference(TranslateLanguageKey, "id")
     val translateMode by rememberPreference(TranslateModeKey, "Literal")
+    val translationProvider by rememberPreference(LyricsTranslationProviderKey, "Auto")
 
     val scope = rememberCoroutineScope()
 
@@ -275,6 +277,7 @@ fun EnhancedLyricsView(
         openRouterModel,
         translateLanguage,
         translateMode,
+        translationProvider,
         currentSong,
         database
     ) {
@@ -289,6 +292,7 @@ fun EnhancedLyricsView(
                     mode = translateMode,
                     scope = scope,
                     context = context,
+                    provider = translationProvider,
                 )
             }
         }
@@ -302,7 +306,8 @@ fun EnhancedLyricsView(
         openRouterBaseUrl,
         openRouterModel,
         translateMode,
-        translateLanguage
+        translateLanguage,
+        translationProvider
     ) {
         if (lines.isNotEmpty()) {
             if (!autoTranslateLyrics) {
@@ -311,7 +316,7 @@ fun EnhancedLyricsView(
                 return@LaunchedEffect
             }
             val targetLang = if (autoTranslateLyricsMismatch) java.util.Locale.getDefault().language else translateLanguage
-            val hasCached = LyricsTranslationHelper.applyCachedTranslations(lines, translateMode, targetLang)
+            val hasCached = LyricsTranslationHelper.applyCachedTranslations(lines, translateMode, targetLang, translationProvider)
             if (!hasCached && autoTranslateLyrics) {
                 val needsTranslation = lines.any { it.translatedTextFlow.value == null && it.text.isNotBlank() }
                 if (needsTranslation) {
@@ -324,6 +329,7 @@ fun EnhancedLyricsView(
                         mode = translateMode,
                         scope = scope,
                         context = context,
+                        provider = translationProvider,
                     )
                 }
             }

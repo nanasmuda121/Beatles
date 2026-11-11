@@ -73,6 +73,7 @@ import com.nanzbeatles.nanas.ui.component.NewActionGrid
 import com.nanzbeatles.nanas.ui.component.TextFieldDialog
 import com.nanzbeatles.nanas.viewmodels.LyricsMenuViewModel
 import com.nanzbeatles.nanas.constants.AutoTranslateLyricsKey
+import com.nanzbeatles.nanas.constants.LyricsTranslationProviderKey
 import com.nanzbeatles.nanas.constants.OpenRouterApiKey
 import com.nanzbeatles.nanas.lyrics.LyricsTranslationHelper
 import com.nanzbeatles.nanas.ui.component.EnumDialog
@@ -94,6 +95,44 @@ fun LyricsMenu(
     
     var autoTranslateLyrics by rememberPreference(AutoTranslateLyricsKey, true)
     val openRouterApiKey by rememberPreference(OpenRouterApiKey, "")
+    var lyricsTranslationProvider by rememberPreference(LyricsTranslationProviderKey, "Auto")
+
+    val translationProviders = listOf(
+        "Auto",
+        "Google",
+        "Google (Clients5)",
+        "MyMemory",
+        "AI Kustom"
+    )
+
+    var showTranslationProviderDialog by rememberSaveable {
+        mutableStateOf(false)
+    }
+
+    if (showTranslationProviderDialog) {
+        EnumDialog(
+            onDismiss = { showTranslationProviderDialog = false },
+            onSelect = {
+                lyricsTranslationProvider = it
+                showTranslationProviderDialog = false
+                LyricsTranslationHelper.clearCache()
+                LyricsTranslationHelper.triggerManualTranslation()
+            },
+            title = "Penyedia Terjemahan Lirik",
+            current = lyricsTranslationProvider,
+            values = translationProviders,
+            valueText = { provider ->
+                when (provider) {
+                    "Auto" -> "Otomatis (Multi-Provider Fallback - Rekomendasi)"
+                    "Google" -> "Google Translate (translate.googleapis.com)"
+                    "Google (Clients5)" -> "Google Translate (Mirror clients5)"
+                    "MyMemory" -> "MyMemory Translate API"
+                    "AI Kustom" -> "Model AI Kustom (OpenRouter / LLM)"
+                    else -> provider
+                }
+            }
+        )
+    }
 
 
     var showEditDialog by rememberSaveable {
@@ -512,7 +551,7 @@ fun LyricsMenu(
                             description = {
                                 Text(
                                     if (openRouterApiKey.isNotBlank()) "Menggunakan API Key AI Kustom"
-                                    else "Menggunakan API Terjemahan Default"
+                                    else "Penyedia: $lyricsTranslationProvider"
                                 )
                             },
                             icon = {
@@ -535,7 +574,37 @@ fun LyricsMenu(
 
                     add(
                         Material3MenuItemData(
+                            title = { Text("Penyedia Terjemahan") },
+                            description = {
+                                Text(
+                                    when (lyricsTranslationProvider) {
+                                        "Auto" -> "Otomatis (Multi-Provider Fallback)"
+                                        "Google" -> "Google Translate"
+                                        "Google (Clients5)" -> "Google Translate (Mirror clients5)"
+                                        "MyMemory" -> "MyMemory Translate API"
+                                        "AI Kustom" -> "Model AI Kustom (${if (openRouterApiKey.isNotBlank()) "Aktif" else "Kunci Kosong"})"
+                                        else -> lyricsTranslationProvider
+                                    }
+                                )
+                            },
+                            icon = {
+                                Icon(
+                                    painter = painterResource(R.drawable.language),
+                                    contentDescription = null,
+                                )
+                            },
+                            onClick = {
+                                showTranslationProviderDialog = true
+                            }
+                        )
+                    )
+
+                    add(
+                        Material3MenuItemData(
                             title = { Text(stringResource(R.string.ai_lyrics_translation)) },
+                            description = {
+                                Text("Terjemahkan ulang dengan $lyricsTranslationProvider")
+                            },
                             icon = {
                                 Icon(
                                     painter = painterResource(R.drawable.translate),
@@ -545,6 +614,7 @@ fun LyricsMenu(
                             onClick = {
                                 autoTranslateLyrics = true
                                 onDismiss()
+                                LyricsTranslationHelper.clearCache()
                                 LyricsTranslationHelper.triggerManualTranslation()
                             },
                         )

@@ -7,6 +7,9 @@ package com.nanzbeatles.nanas.lyrics
 import android.content.Context
 import com.nanzbeatles.nanas.api.OpenRouterService
 import com.nanzbeatles.nanas.constants.LanguageCodeToName
+import com.nanzbeatles.nanas.constants.LyricsTranslationProviderKey
+import com.nanzbeatles.nanas.utils.dataStore
+import com.nanzbeatles.nanas.utils.get
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -33,21 +36,21 @@ object LyricsTranslationHelper {
     private var translationJob: Job? = null
     private var isCompositionActive = true
     
-    // Cache for translations: key = hash of (lyrics content + mode + language), value = list of translations
+    // Cache for translations: key = hash of (lyrics content + mode + language + provider), value = list of translations
     private val translationCache = mutableMapOf<String, List<String>>()
-    
-    private fun getCacheKey(lyricsText: String, mode: String, language: String): String {
-        return "${lyricsText.hashCode()}_${mode}_$language"
+
+    private fun getCacheKey(lyricsText: String, mode: String, language: String, provider: String = "Auto"): String {
+        return "${lyricsText.hashCode()}_${mode}_${language}_$provider"
     }
-    
-    fun getCachedTranslations(lyrics: List<LyricsEntry>, mode: String, language: String): List<String>? {
+
+    fun getCachedTranslations(lyrics: List<LyricsEntry>, mode: String, language: String, provider: String = "Auto"): List<String>? {
         val lyricsText = lyrics.filter { it.text.isNotBlank() }.joinToString("\n") { it.text }
-        val key = getCacheKey(lyricsText, mode, language)
+        val key = getCacheKey(lyricsText, mode, language, provider)
         return translationCache[key]
     }
-    
-    fun applyCachedTranslations(lyrics: List<LyricsEntry>, mode: String, language: String): Boolean {
-        val cached = getCachedTranslations(lyrics, mode, language) ?: return false
+
+    fun applyCachedTranslations(lyrics: List<LyricsEntry>, mode: String, language: String, provider: String = "Auto"): Boolean {
+        val cached = getCachedTranslations(lyrics, mode, language, provider) ?: return false
         val nonEmptyEntries = lyrics.mapIndexedNotNull { index, entry ->
             if (entry.text.isNotBlank()) index to entry else null
         }
@@ -97,7 +100,8 @@ object LyricsTranslationHelper {
         model: String,
         mode: String,
         scope: CoroutineScope,
-        context: Context
+        context: Context,
+        provider: String? = null
     ) {
         translationJob?.cancel()
         _status.value = TranslationStatus.Translating
@@ -126,6 +130,7 @@ object LyricsTranslationHelper {
                 val fullText = nonEmptyEntries.joinToString("\n") { it.second.text }
 
                 val effectiveLangCode = targetLanguage.ifBlank { "id" }
+                val effectiveProvider = provider ?: context.dataStore[LyricsTranslationProviderKey] ?: "Auto"
 
                 // Convert language code to full language name for AI understanding
                 val fullLanguageName = LanguageCodeToName[effectiveLangCode] 
@@ -141,7 +146,8 @@ object LyricsTranslationHelper {
                     baseUrl = baseUrl,
                     model = model,
                     mode = mode,
-                    targetLanguageCode = effectiveLangCode
+                    targetLanguageCode = effectiveLangCode,
+                    provider = effectiveProvider
                 )
                 
                 result.onSuccess { translatedLines ->
@@ -150,7 +156,7 @@ object LyricsTranslationHelper {
                     }
                     
                     // Cache the translations
-                    val cacheKey = getCacheKey(fullText, mode, effectiveLangCode)
+                    val cacheKey = getCacheKey(fullText, mode, effectiveLangCode, effectiveProvider)
                     translationCache[cacheKey] = translatedLines
                     
                     val expectedCount = nonEmptyEntries.size
