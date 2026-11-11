@@ -249,7 +249,7 @@ fun LyricsProviderQuickPill(
             .background(fgColor.copy(alpha = 0.08f))
             .border(1.dp, fgColor.copy(alpha = 0.18f), pillShape)
             .clickable(enabled = !isSwitching, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .padding(horizontal = 10.dp, vertical = 6.dp)
     ) {
         if (isSwitching) {
             CircularProgressIndicator(
@@ -272,7 +272,9 @@ fun LyricsProviderQuickPill(
             fontWeight = FontWeight.SemiBold,
             color = fgColor,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false)
         )
 
         Icon(

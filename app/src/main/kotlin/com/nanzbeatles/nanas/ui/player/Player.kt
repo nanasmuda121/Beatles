@@ -29,6 +29,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.MarqueeSpacing
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -978,10 +979,11 @@ fun BottomSheetPlayer(
                             fontSize = 24.sp,
                             fontWeight = FontWeight.ExtraBold,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                            softWrap = false,
+                            overflow = TextOverflow.Clip,
                             color = TextBackgroundColor,
                             modifier = Modifier
-                                .basicMarquee(iterations = 1, initialDelayMillis = 3000, velocity = 30.dp)
+                                .basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 2500, spacing = MarqueeSpacing(48.dp), velocity = 30.dp)
                                 .combinedClickable(
                                     enabled = true,
                                     indication = null,
@@ -1026,7 +1028,7 @@ fun BottomSheetPlayer(
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .basicMarquee(iterations = 1, initialDelayMillis = 3000, velocity = 30.dp)
+                                    .basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 2500, spacing = MarqueeSpacing(48.dp), velocity = 30.dp)
                             ) {
                                 var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
                                 var clickOffset by remember { mutableStateOf<Offset?>(null) }
@@ -1037,7 +1039,8 @@ fun BottomSheetPlayer(
                                         fontSize = 15.sp
                                     ),
                                     maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Clip,
                                     onTextLayout = { layoutResult = it },
                                     modifier = Modifier
                                         .pointerInput(Unit) {
@@ -1344,7 +1347,7 @@ fun BottomSheetPlayer(
                 Modifier
                     .fillMaxWidth()
                     .padding(horizontal = PlayerHorizontalPadding)
-                    .frostedGlassSurface(shape = RoundedCornerShape(36.dp), isHighlighted = true)
+                    .crystalLiquidGlassSurface(shape = RoundedCornerShape(36.dp), isHighlighted = false)
                     .padding(horizontal = 16.dp, vertical = 10.dp)
             } else {
                 Modifier
@@ -1596,8 +1599,9 @@ fun BottomSheetPlayer(
                                 fontWeight = FontWeight.Bold,
                                 color = fullLyricsFgColor,
                                 maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.basicMarquee()
+                                softWrap = false,
+                                overflow = TextOverflow.Clip,
+                                modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 2500, spacing = MarqueeSpacing(48.dp), velocity = 30.dp)
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
@@ -1605,6 +1609,7 @@ fun BottomSheetPlayer(
                                 fontSize = 14.sp,
                                 color = fullLyricsFgColor.copy(alpha = 0.65f),
                                 maxLines = 1,
+                                softWrap = false,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
@@ -1858,7 +1863,7 @@ fun BottomSheetPlayer(
                                 }
 
                                 // Spacer to balance right side (since right side has 2 icons: Equalizer + 3-dot)
-                                Spacer(modifier = Modifier.width(38.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
 
                                 // Center: "SEDANG DIPUTAR" + Artist/Context Subtitle
                                 Column(
@@ -1873,9 +1878,11 @@ fun BottomSheetPlayer(
                                         },
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold,
-                                        letterSpacing = 2.4.sp,
+                                        letterSpacing = 1.6.sp,
                                         color = TextBackgroundColor.copy(alpha = 0.62f),
-                                        maxLines = 1
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                     if (subtitleText.isNotBlank()) {
                                         Spacer(modifier = Modifier.height(2.dp))
@@ -1885,8 +1892,8 @@ fun BottomSheetPlayer(
                                             fontWeight = FontWeight.Bold,
                                             color = TextBackgroundColor,
                                             maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.basicMarquee()
+                                            softWrap = false,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                 }
@@ -2094,14 +2101,16 @@ fun BottomSheetPlayer(
                                                         fontWeight = FontWeight.Bold,
                                                         color = cardFgColor,
                                                         maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis,
-                                                        modifier = Modifier.basicMarquee()
+                                                        softWrap = false,
+                                                        overflow = TextOverflow.Clip,
+                                                        modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 2500, spacing = MarqueeSpacing(48.dp), velocity = 30.dp)
                                                     )
                                                     Text(
                                                         text = meta.artists.joinToString { it.name },
                                                         fontSize = 12.sp,
                                                         color = cardFgColor.copy(alpha = 0.65f),
                                                         maxLines = 1,
+                                                        softWrap = false,
                                                         overflow = TextOverflow.Ellipsis
                                                     )
                                                 }
@@ -2173,7 +2182,8 @@ fun BottomSheetPlayer(
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 modifier = Modifier
                                                     .fillMaxWidth()
-                                                    .padding(horizontal = 12.dp, vertical = 10.dp)
+                                                    .height(54.dp)
+                                                    .padding(horizontal = 12.dp)
                                             ) {
                                                 // Sync [-][+] Pill (steps backward/forward by 1 lyric line)
                                                 Row(
@@ -2190,6 +2200,8 @@ fun BottomSheetPlayer(
                                                         fontSize = 11.sp,
                                                         fontWeight = FontWeight.Medium,
                                                         color = cardFgColor.copy(alpha = 0.75f),
+                                                        maxLines = 1,
+                                                        softWrap = false,
                                                         modifier = Modifier.clickable {
                                                             bottomSheetPageState.show {
                                                                 ShowOffsetDialog(
@@ -2237,7 +2249,7 @@ fun BottomSheetPlayer(
                                                     isSwitching = isSwitchingLyricsProvider,
                                                     switchingToName = switchingLyricsProviderName,
                                                     onClick = { showLyricsProviderDialog = true },
-                                                    modifier = Modifier.padding(horizontal = 4.dp)
+                                                    modifier = Modifier.weight(1f, fill = false).padding(horizontal = 4.dp)
                                                 )
 
                                                 // "Lirik Penuh" Pill Button
@@ -2254,7 +2266,9 @@ fun BottomSheetPlayer(
                                                         text = "Lirik Penuh",
                                                         fontSize = 11.sp,
                                                         fontWeight = FontWeight.Bold,
-                                                        color = cardFgColor
+                                                        color = cardFgColor,
+                                                        maxLines = 1,
+                                                        softWrap = false
                                                     )
                                                 }
                                             }
@@ -2476,7 +2490,17 @@ fun InlineLyricsView(
                         }
                     }
                 } catch (e: Exception) {
-                    // Handle error
+                    if (currentLyrics == null) {
+                        database.query {
+                            upsert(
+                                LyricsEntity(
+                                    meta.id,
+                                    LyricsEntity.LYRICS_NOT_FOUND,
+                                    "Unknown"
+                                )
+                            )
+                        }
+                    }
                 }
             }
         }

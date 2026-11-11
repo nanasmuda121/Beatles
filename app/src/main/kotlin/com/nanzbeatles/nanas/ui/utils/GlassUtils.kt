@@ -324,15 +324,23 @@ fun Modifier.liquidGlassPill(
     val effectiveShape = if (isEditorial) RoundedCornerShape(8.dp) else shape
 
     val bg = when {
-        isSelected && isDark -> if (isEditorial) Color(0xFFF5F2EB) else Color.White
-        isSelected && !isDark -> if (isEditorial) Color(0xFF111111) else Color(0xFF101114)
-        isDark -> if (isEditorial) Color(0xFF141418) else Color(0xFF18191E)
-        else -> if (isEditorial) Color(0xFFEDE9E0) else Color(0xFFECEEF2)
+        isEditorial -> when {
+            isSelected && isDark -> Color(0xFFF5F2EB)
+            isSelected && !isDark -> Color(0xFF111111)
+            isDark -> Color(0xFF141418)
+            else -> Color(0xFFEDE9E0)
+        }
+        isSelected -> if (isDark) Color.White.copy(alpha = 0.22f) else Color.Black.copy(alpha = 0.14f)
+        isDark -> Color.White.copy(alpha = 0.10f)
+        else -> Color.Black.copy(alpha = 0.06f)
     }
     val border = when {
-        isSelected -> Color.Transparent
-        isEditorial && isDark -> Color(0xFFF5F2EB).copy(alpha = 0.20f)
-        isEditorial && !isDark -> Color(0xFF111111).copy(alpha = 0.18f)
+        isEditorial -> when {
+            isSelected -> Color.Transparent
+            isDark -> Color(0xFFF5F2EB).copy(alpha = 0.20f)
+            else -> Color(0xFF111111).copy(alpha = 0.18f)
+        }
+        isSelected -> if (isDark) Color.White.copy(alpha = 0.38f) else Color.Black.copy(alpha = 0.22f)
         isDark -> Color.White.copy(alpha = 0.08f)
         else -> Color.Black.copy(alpha = 0.07f)
     }

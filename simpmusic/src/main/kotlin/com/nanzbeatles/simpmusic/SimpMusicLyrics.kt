@@ -46,9 +46,9 @@ object SimpMusicLyrics {
             }
 
             install(HttpTimeout) {
-                requestTimeoutMillis = 15000
-                connectTimeoutMillis = 10000
-                socketTimeoutMillis = 15000
+                requestTimeoutMillis = 6000
+                connectTimeoutMillis = 4000
+                socketTimeoutMillis = 6000
             }
 
             defaultRequest {

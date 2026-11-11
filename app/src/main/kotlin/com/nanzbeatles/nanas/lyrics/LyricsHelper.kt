@@ -28,8 +28,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 import javax.inject.Inject
 
-private const val MAX_LYRICS_FETCH_MS = 25_000L
-private const val PER_PROVIDER_TIMEOUT_MS = 8_000L
+private const val MAX_LYRICS_FETCH_MS = 30_000L
+private const val PER_PROVIDER_TIMEOUT_MS = 6_000L
 private const val PROVIDER_NONE = "Unknown"
 
 class LyricsHelper
@@ -109,9 +109,9 @@ constructor(
 
                 if (providerResult != null && providerResult.isSuccess) {
                     val lyrics = providerResult.getOrNull()
-                    if (!lyrics.isNullOrBlank() && lyrics != LYRICS_NOT_FOUND) {
+                    if (isValidLyricsContent(lyrics)) {
                         Timber.tag(TAG).i("Got lyrics from ${provider.name}")
-                        return@withTimeoutOrNull LyricsWithProvider(lyrics, provider.name)
+                        return@withTimeoutOrNull LyricsWithProvider(lyrics!!, provider.name)
                     }
                     Timber.tag(TAG).w("${provider.name} returned success with empty/NOT_FOUND body")
                 } else {
@@ -257,9 +257,9 @@ constructor(
 
                 if (providerResult != null && providerResult.isSuccess) {
                     val lyrics = providerResult.getOrNull()
-                    if (!lyrics.isNullOrBlank() && lyrics != LYRICS_NOT_FOUND) {
+                    if (isValidLyricsContent(lyrics)) {
                         Timber.tag(TAG).i("Direct switch got lyrics from ${provider.name}")
-                        return@withTimeoutOrNull LyricsWithProvider(lyrics, provider.name)
+                        return@withTimeoutOrNull LyricsWithProvider(lyrics!!, provider.name)
                     }
                 }
             }
@@ -397,6 +397,33 @@ constructor(
             MusixmatchLyricsProvider.name, "Musixmatch" -> PreferredLyricsProvider.MUSIXMATCH
             KuGouLyricsProvider.name, "KuGou" -> PreferredLyricsProvider.KUGOU
             else -> null
+        }
+
+        fun isValidLyricsContent(lyrics: String?): Boolean {
+            if (lyrics.isNullOrBlank() || lyrics == LYRICS_NOT_FOUND) return false
+            val lines = lyrics.lines()
+            return lines.any { rawLine ->
+                val line = rawLine.trim()
+                if (line.isBlank()) return@any false
+                if (line.startsWith("[ti:", ignoreCase = true) ||
+                    line.startsWith("[ar:", ignoreCase = true) ||
+                    line.startsWith("[al:", ignoreCase = true) ||
+                    line.startsWith("[by:", ignoreCase = true) ||
+                    line.startsWith("[offset:", ignoreCase = true) ||
+                    line.startsWith("[re:", ignoreCase = true) ||
+                    line.startsWith("[ve:", ignoreCase = true) ||
+                    line.startsWith("[length:", ignoreCase = true) ||
+                    line.startsWith("[kana:", ignoreCase = true) ||
+                    line.startsWith("[id:", ignoreCase = true) ||
+                    line.startsWith("[au:", ignoreCase = true)) {
+                    return@any false
+                }
+                val withoutTags = line.replace(Regex("\\[[0-9:.]+\\]"), "")
+                    .replace(Regex("<[0-9:.]*>"), "")
+                    .replace("♪", "")
+                    .trim()
+                withoutTags.isNotBlank()
+            }
         }
     }
 }

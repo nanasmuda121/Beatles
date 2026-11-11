@@ -97,6 +97,7 @@ import com.nanzbeatles.nanas.constants.VideoLyricsWaveSpeedPercentKey
 import androidx.compose.ui.platform.testTag
 import com.nanzbeatles.nanas.extensions.toMediaItem
 import com.nanzbeatles.nanas.lyrics.LyricsEntry
+import kotlinx.coroutines.CancellationException
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -1538,42 +1539,56 @@ fun LyricVideoCreationDialog(
                                     val currentWaveSpeedPercent = waveSpeedPercent
                                     val currentAudioStyle = activeAudioStyle
                                     scope.launch {
-                                        context.dataStore.edit { prefs ->
-                                            prefs[VideoLyricsCardStyleKey] = currentCardStyle.name
-                                            prefs[VideoLyricsEffectStyleKey] = currentEffectStyle.name
-                                            prefs[VideoLyricsHideInactiveKey] = currentHideInactive
-                                            prefs[VideoLyricsShowUpcomingKey] = !currentHideInactive
-                                            prefs[VideoLyricsJedagJedugKey] = currentJedagJedug
-                                            prefs[VideoLyricsSnowKey] = currentSnow
-                                            prefs[VideoLyricsWaveAmplitudePercentKey] = currentWaveAmpPercent
-                                            prefs[VideoLyricsWaveSpeedPercentKey] = currentWaveSpeedPercent
-                                        }
-                                        val result = LyricVideoShareUtils.generateLyricVideo(
-                                            context = context,
-                                            mediaMetadata = mediaMetadata,
-                                            lyrics = videoLyricsOnly,
-                                            startTimeMs = startPosMs,
-                                            durationMs = durationMs,
-                                            cardStyle = currentCardStyle,
-                                            effectStyle = currentEffectStyle,
-                                            jedagJedugEnabled = currentJedagJedug,
-                                            snowEnabled = currentSnow,
-                                            waveAmplitudeScale = currentWaveAmpPercent / 100f,
-                                            waveSpeedScale = currentWaveSpeedPercent / 100f,
-                                            audioStyleMode = currentAudioStyle,
-                                            downloadCache = downloadCache,
-                                            playerCache = playerCache,
-                                            onProgress = { stage, prog ->
-                                                currentStage = stage
-                                                currentProgress = prog
+                                        try {
+                                            context.dataStore.edit { prefs ->
+                                                prefs[VideoLyricsCardStyleKey] = currentCardStyle.name
+                                                prefs[VideoLyricsEffectStyleKey] = currentEffectStyle.name
+                                                prefs[VideoLyricsHideInactiveKey] = currentHideInactive
+                                                prefs[VideoLyricsShowUpcomingKey] = !currentHideInactive
+                                                prefs[VideoLyricsJedagJedugKey] = currentJedagJedug
+                                                prefs[VideoLyricsSnowKey] = currentSnow
+                                                prefs[VideoLyricsWaveAmplitudePercentKey] = currentWaveAmpPercent
+                                                prefs[VideoLyricsWaveSpeedPercentKey] = currentWaveSpeedPercent
                                             }
-                                        )
+                                            val result = try {
+                                                LyricVideoShareUtils.generateLyricVideo(
+                                                    context = context,
+                                                    mediaMetadata = mediaMetadata,
+                                                    lyrics = videoLyricsOnly,
+                                                    startTimeMs = startPosMs,
+                                                    durationMs = durationMs,
+                                                    cardStyle = currentCardStyle,
+                                                    effectStyle = currentEffectStyle,
+                                                    jedagJedugEnabled = currentJedagJedug,
+                                                    snowEnabled = currentSnow,
+                                                    waveAmplitudeScale = currentWaveAmpPercent / 100f,
+                                                    waveSpeedScale = currentWaveSpeedPercent / 100f,
+                                                    audioStyleMode = currentAudioStyle,
+                                                    downloadCache = downloadCache,
+                                                    playerCache = playerCache,
+                                                    onProgress = { stage, prog ->
+                                                        currentStage = stage
+                                                        currentProgress = prog
+                                                    }
+                                                )
+                                            } catch (ce: CancellationException) {
+                                                throw ce
+                                            } catch (t: Throwable) {
+                                                Result.failure(t)
+                                            }
 
-                                        if (result.isSuccess) {
-                                            generatedVideoFile = result.getOrNull()
-                                        } else {
+                                            if (result.isSuccess) {
+                                                generatedVideoFile = result.getOrNull()
+                                            } else {
+                                                isGenerating = false
+                                                errorMessage = "Gagal membuat video: ${result.exceptionOrNull()?.message}"
+                                            }
+                                        } catch (ce: CancellationException) {
                                             isGenerating = false
-                                            errorMessage = "Gagal membuat video: ${result.exceptionOrNull()?.message}"
+                                            throw ce
+                                        } catch (e: Throwable) {
+                                            isGenerating = false
+                                            errorMessage = "Gagal membuat video: ${e.message}"
                                         }
                                     }
                                 },

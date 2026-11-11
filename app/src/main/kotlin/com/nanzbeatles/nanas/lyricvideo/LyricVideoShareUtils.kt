@@ -313,8 +313,20 @@ object LyricVideoShareUtils {
             val encodedPackets = ArrayList<Mp4ContainerWriter.AudioPacket>(1024)
 
             val timeoutUs = 5000L
+            val startNs = System.nanoTime()
+            var lastActivityNs = startNs
 
             while (!encoderDone) {
+                val nowNs = System.nanoTime()
+                if (nowNs - lastActivityNs > 20_000_000_000L) {
+                    Timber.tag(TAG).e("transcodeAudioToAac watchdog: idle for > 20 seconds, aborting")
+                    return false
+                }
+                if (nowNs - startNs > 180_000_000_000L) {
+                    Timber.tag(TAG).e("transcodeAudioToAac watchdog: total time exceeded 180 seconds, aborting")
+                    return false
+                }
+
                 // 1. Feed extractor into decoder
                 if (!extractorDone) {
                     val inIdx = decoder.dequeueInputBuffer(timeoutUs)
@@ -332,6 +344,7 @@ object LyricVideoShareUtils {
                                 decoder.queueInputBuffer(inIdx, 0, sampleSize, maxOf(0L, sampleTime), 0)
                                 extractor.advance()
                             }
+                            lastActivityNs = System.nanoTime()
                         }
                     }
                 }
@@ -341,6 +354,7 @@ object LyricVideoShareUtils {
                 if ((currentPending == null || !currentPending.hasRemaining()) && !decoderDone) {
                     val decOutIdx = decoder.dequeueOutputBuffer(decoderBufferInfo, timeoutUs)
                     if (decOutIdx >= 0) {
+                        lastActivityNs = System.nanoTime()
                         val decBuf = decoder.getOutputBuffer(decOutIdx)
                         val isEos = (decoderBufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
 
@@ -370,6 +384,7 @@ object LyricVideoShareUtils {
                     val encInIdx = encoder.dequeueInputBuffer(timeoutUs)
                     if (encInIdx >= 0) {
                         val encInBuf = encoder.getInputBuffer(encInIdx)
+                        val ptsUs = (totalEncodedPcmFrames * 1_000_000L) / sampleRate
                         if (encInBuf != null) {
                             encInBuf.clear()
                             val maxBytes = (minOf(activePcm.remaining(), encInBuf.remaining()) / frameSize) * frameSize
@@ -379,10 +394,18 @@ object LyricVideoShareUtils {
                                 encInBuf.put(activePcm)
                                 activePcm.limit(oldLimit)
 
-                                val ptsUs = (totalEncodedPcmFrames * 1_000_000L) / sampleRate
                                 totalEncodedPcmFrames += (maxBytes / frameSize).toLong()
                                 encoder.queueInputBuffer(encInIdx, 0, maxBytes, ptsUs, 0)
+                                lastActivityNs = System.nanoTime()
+                            } else {
+                                pendingPcmBuffer = null
+                                encoder.queueInputBuffer(encInIdx, 0, 0, ptsUs, 0)
+                                lastActivityNs = System.nanoTime()
                             }
+                        } else {
+                            pendingPcmBuffer = null
+                            encoder.queueInputBuffer(encInIdx, 0, 0, ptsUs, 0)
+                            lastActivityNs = System.nanoTime()
                         }
                     }
                 } else if (decoderDone && !encoderEosQueued) {
@@ -391,12 +414,14 @@ object LyricVideoShareUtils {
                         val ptsUs = (totalEncodedPcmFrames * 1_000_000L) / sampleRate
                         encoder.queueInputBuffer(encInIdx, 0, 0, ptsUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                         encoderEosQueued = true
+                        lastActivityNs = System.nanoTime()
                     }
                 }
 
                 // 3. Drain encoder into memory packet list
                 val encOutIdx = encoder.dequeueOutputBuffer(encoderBufferInfo, timeoutUs)
                 if (encOutIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                    lastActivityNs = System.nanoTime()
                     val fmt = encoder.outputFormat
                     encoderOutputFormat = fmt
                     if (fmt.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
@@ -407,6 +432,7 @@ object LyricVideoShareUtils {
                     }
                     csd0Bytes = Mp4ContainerWriter.extractFormatCsd0(fmt) ?: csd0Bytes
                 } else if (encOutIdx >= 0) {
+                    lastActivityNs = System.nanoTime()
                     val encOutBuf = encoder.getOutputBuffer(encOutIdx)
                     if ((encoderBufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
                         if (encOutBuf != null && encoderBufferInfo.size > 0 && csd0Bytes == null) {

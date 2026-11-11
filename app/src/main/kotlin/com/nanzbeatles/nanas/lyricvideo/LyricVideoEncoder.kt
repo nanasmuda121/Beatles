@@ -95,173 +95,196 @@ object LyricVideoEncoder {
                 setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, I_FRAME_INTERVAL)
             }
 
-            val encoder = MediaCodec.createEncoderByType(MIME_TYPE_VIDEO)
-            encoder.configure(videoFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-            encoder.start()
-
-            val artistHandle = if (config.songArtist.isNotBlank()) {
-                val clean = config.songArtist.trim()
-                if (clean.startsWith("@")) clean else "@$clean"
-            } else {
-                "@Beatles"
-            }
-
-            val renderer = LyricVideoRenderer(
-                width = VIDEO_WIDTH,
-                height = VIDEO_HEIGHT,
-                caseBitmap = config.caseBitmap,
-                brandText = "@BeatlesMusic",
-                artistHandle = artistHandle,
-                cardStyle = config.cardStyle,
-                effectStyle = config.effectStyle,
-                clipStartTimeMs = config.startTimeMs,
-                lyricsScale = config.lyricsScale,
-                lyricsOffsetX = config.lyricsOffsetX,
-                lyricsOffsetY = config.lyricsOffsetY,
-                cardScale = config.cardScale,
-                cardOffsetX = config.cardOffsetX,
-                cardOffsetY = config.cardOffsetY,
-                cardAlpha = config.cardAlpha,
-                lyricsSpacingScale = config.lyricsSpacingScale,
-                showUpcomingLyrics = config.showUpcomingLyrics,
-                hideInactiveLyrics = config.hideInactiveLyrics,
-                lyricsRotation = config.lyricsRotation,
-                cardRotation = config.cardRotation,
-                jedagJedugEnabled = config.jedagJedugEnabled,
-                snowEnabled = config.snowEnabled,
-                waveAmplitudeScale = config.waveAmplitudeScale,
-                waveSpeedScale = config.waveSpeedScale
-            ).apply {
-                setCoverBitmap(config.coverBitmap)
-            }
-
-            val frameBitmap = Bitmap.createBitmap(VIDEO_WIDTH, VIDEO_HEIGHT, Bitmap.Config.ARGB_8888)
-            val frameCanvas = Canvas(frameBitmap)
-            val argbPixels = IntArray(VIDEO_WIDTH * VIDEO_HEIGHT)
-
-            var encoderOutputFormat: MediaFormat? = null
-            var videoSamplesWritten = 0
-
-            val bufferInfo = MediaCodec.BufferInfo()
-            var currentFrame = 0
-            var isInputEOS = false
-            var isOutputEOS = false
-
-            Timber.tag(TAG).d("Starting video encode loop for $totalFrames frames")
-
-            while (!isOutputEOS && coroutineContext.isActive) {
-                // Feed input frames
-                if (!isInputEOS) {
-                    val inputBufferIndex = encoder.dequeueInputBuffer(TIMEOUT_US)
-                    if (inputBufferIndex >= 0) {
-                        if (currentFrame >= totalFrames) {
-                            encoder.queueInputBuffer(
-                                inputBufferIndex,
-                                0,
-                                0,
-                                currentFrame * frameDurationUs,
-                                MediaCodec.BUFFER_FLAG_END_OF_STREAM
-                            )
-                            isInputEOS = true
-                        } else {
-                            val presentationTimeUs = currentFrame * frameDurationUs
-                            val elapsedVideoMs = currentFrame * 1000L / VIDEO_FPS
-                            val frameTimeMs = config.startTimeMs + (elapsedVideoMs.toDouble() * config.audioSpeed.toDouble()).toLong()
-
-                            // Lookup amplitude for this frame within the clipped audio segment
-                            val amplitude = config.amplitudes.getOrElse(currentFrame) { 0.25f }
-
-                            // Render frame to Bitmap
-                            renderer.renderFrame(
-                                frameCanvas,
-                                frameTimeMs,
-                                amplitude,
-                                config.lyrics,
-                                config.songTitle,
-                                config.songArtist
-                            )
-
-                            // Copy Bitmap to Image YUV or InputBuffer NV12
-                            val inputImage = try { encoder.getInputImage(inputBufferIndex) } catch (e: Exception) { null }
-                            frameBitmap.getPixels(argbPixels, 0, VIDEO_WIDTH, 0, 0, VIDEO_WIDTH, VIDEO_HEIGHT)
-                            if (inputImage != null) {
-                                try {
-                                    copyArgbToImageYuv(argbPixels, inputImage, VIDEO_WIDTH, VIDEO_HEIGHT)
-                                } finally {
-                                    try { inputImage.close() } catch (_: Exception) {}
-                                }
-                            } else {
-                                val inputBuffer = encoder.getInputBuffer(inputBufferIndex)
-                                if (inputBuffer != null) {
-                                    copyArgbToNv12(argbPixels, inputBuffer, VIDEO_WIDTH, VIDEO_HEIGHT)
-                                }
-                            }
-
-                            val frameBytesSize = (VIDEO_WIDTH * VIDEO_HEIGHT * 3) / 2
-                            encoder.queueInputBuffer(
-                                inputBufferIndex,
-                                0,
-                                frameBytesSize,
-                                presentationTimeUs,
-                                0
-                            )
-
-                            currentFrame++
-                            val encodeProgress = (currentFrame.toFloat() / totalFrames).coerceIn(0f, 1f)
-                            onProgress("Merender video lirik...", 0.40f + 0.45f * encodeProgress)
-                        }
-                    }
+            val encoder = runCatching {
+                val enc = MediaCodec.createEncoderByType(MIME_TYPE_VIDEO)
+                try {
+                    enc.configure(videoFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+                    enc.start()
+                    enc
+                } catch (e: Exception) {
+                    try { enc.release() } catch (_: Exception) {}
+                    throw e
                 }
+            }.getOrThrow()
 
-                // Drain output packets
-                val outputBufferIndex = encoder.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
-                if (outputBufferIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                    encoderOutputFormat = encoder.outputFormat
-                    muxSession.setVideoFormat(encoder.outputFormat)
-                    Timber.tag(TAG).d("Video encoder output format received: $encoderOutputFormat")
-                } else if (outputBufferIndex >= 0) {
-                    val encodedData = encoder.getOutputBuffer(outputBufferIndex)
-                    if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
-                        if (encodedData != null && bufferInfo.size > 0) {
-                            encodedData.position(bufferInfo.offset)
-                            encodedData.limit(bufferInfo.offset + bufferInfo.size)
-                            val csdBytes = ByteArray(bufferInfo.size)
-                            encodedData.get(csdBytes)
-                            muxSession.feedVideoCodecConfig(csdBytes)
-                        }
-                        bufferInfo.size = 0
-                    }
-                    if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
-                        isOutputEOS = true
-                    }
-
-                    if (encodedData != null && bufferInfo.size > 0) {
-                        if (encoderOutputFormat == null) {
-                            encoderOutputFormat = encoder.outputFormat
-                            muxSession.setVideoFormat(encoder.outputFormat)
-                        }
-                        encodedData.position(bufferInfo.offset)
-                        encodedData.limit(bufferInfo.offset + bufferInfo.size)
-                        val packetBytes = ByteArray(bufferInfo.size)
-                        encodedData.get(packetBytes)
-                        val isKeyFrame = (bufferInfo.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME) != 0
-                        muxSession.writeVideoSample(packetBytes, bufferInfo.presentationTimeUs, isKeyFrame)
-                        videoSamplesWritten++
-                    }
-
-                    encoder.releaseOutputBuffer(outputBufferIndex, false)
-                }
-            }
+            var frameBitmap: Bitmap? = null
 
             try {
-                encoder.stop()
-                encoder.release()
-            } catch (ignored: Exception) {}
+                val artistHandle = if (config.songArtist.isNotBlank()) {
+                    val clean = config.songArtist.trim()
+                    if (clean.startsWith("@")) clean else "@$clean"
+                } else {
+                    "@Beatles"
+                }
 
-            frameBitmap.recycle()
+                val renderer = LyricVideoRenderer(
+                    width = VIDEO_WIDTH,
+                    height = VIDEO_HEIGHT,
+                    caseBitmap = config.caseBitmap,
+                    brandText = "@BeatlesMusic",
+                    artistHandle = artistHandle,
+                    cardStyle = config.cardStyle,
+                    effectStyle = config.effectStyle,
+                    clipStartTimeMs = config.startTimeMs,
+                    lyricsScale = config.lyricsScale,
+                    lyricsOffsetX = config.lyricsOffsetX,
+                    lyricsOffsetY = config.lyricsOffsetY,
+                    cardScale = config.cardScale,
+                    cardOffsetX = config.cardOffsetX,
+                    cardOffsetY = config.cardOffsetY,
+                    cardAlpha = config.cardAlpha,
+                    lyricsSpacingScale = config.lyricsSpacingScale,
+                    showUpcomingLyrics = config.showUpcomingLyrics,
+                    hideInactiveLyrics = config.hideInactiveLyrics,
+                    lyricsRotation = config.lyricsRotation,
+                    cardRotation = config.cardRotation,
+                    jedagJedugEnabled = config.jedagJedugEnabled,
+                    snowEnabled = config.snowEnabled,
+                    waveAmplitudeScale = config.waveAmplitudeScale,
+                    waveSpeedScale = config.waveSpeedScale
+                ).apply {
+                    setCoverBitmap(config.coverBitmap)
+                }
 
-            if (videoSamplesWritten == 0) {
-                error("Perangkat tidak dapat menghasilkan rekaman video. Silakan periksa izin atau coba lagi.")
+                val localBitmap = Bitmap.createBitmap(VIDEO_WIDTH, VIDEO_HEIGHT, Bitmap.Config.ARGB_8888)
+                frameBitmap = localBitmap
+                val frameCanvas = Canvas(localBitmap)
+                val argbPixels = IntArray(VIDEO_WIDTH * VIDEO_HEIGHT)
+
+                var encoderOutputFormat: MediaFormat? = null
+                var videoSamplesWritten = 0
+
+                val bufferInfo = MediaCodec.BufferInfo()
+                var currentFrame = 0
+                var isInputEOS = false
+                var isOutputEOS = false
+                var lastActivityNs = System.nanoTime()
+                var lastReportedPercent = -1
+
+                Timber.tag(TAG).d("Starting video encode loop for $totalFrames frames")
+
+                while (!isOutputEOS && coroutineContext.isActive) {
+                    if (System.nanoTime() - lastActivityNs > 30_000_000_000L) {
+                        error("Encoder video tidak merespons...")
+                    }
+
+                    // Feed input frames
+                    if (!isInputEOS) {
+                        val inputBufferIndex = encoder.dequeueInputBuffer(TIMEOUT_US)
+                        if (inputBufferIndex >= 0) {
+                            lastActivityNs = System.nanoTime()
+                            if (currentFrame >= totalFrames) {
+                                encoder.queueInputBuffer(
+                                    inputBufferIndex,
+                                    0,
+                                    0,
+                                    currentFrame * frameDurationUs,
+                                    MediaCodec.BUFFER_FLAG_END_OF_STREAM
+                                )
+                                isInputEOS = true
+                            } else {
+                                val presentationTimeUs = currentFrame * frameDurationUs
+                                val elapsedVideoMs = currentFrame * 1000L / VIDEO_FPS
+                                val frameTimeMs = config.startTimeMs + (elapsedVideoMs.toDouble() * config.audioSpeed.toDouble()).toLong()
+
+                                // Lookup amplitude for this frame within the clipped audio segment
+                                val amplitude = config.amplitudes.getOrElse(currentFrame) { 0.25f }
+
+                                // Render frame to Bitmap
+                                renderer.renderFrame(
+                                    frameCanvas,
+                                    frameTimeMs,
+                                    amplitude,
+                                    config.lyrics,
+                                    config.songTitle,
+                                    config.songArtist
+                                )
+
+                                // Copy Bitmap to Image YUV or InputBuffer NV12
+                                val inputImage = try { encoder.getInputImage(inputBufferIndex) } catch (e: Exception) { null }
+                                localBitmap.getPixels(argbPixels, 0, VIDEO_WIDTH, 0, 0, VIDEO_WIDTH, VIDEO_HEIGHT)
+                                if (inputImage != null) {
+                                    try {
+                                        copyArgbToImageYuv(argbPixels, inputImage, VIDEO_WIDTH, VIDEO_HEIGHT)
+                                    } finally {
+                                        try { inputImage.close() } catch (_: Exception) {}
+                                    }
+                                } else {
+                                    val inputBuffer = encoder.getInputBuffer(inputBufferIndex)
+                                    if (inputBuffer != null) {
+                                        copyArgbToNv12(argbPixels, inputBuffer, VIDEO_WIDTH, VIDEO_HEIGHT)
+                                    }
+                                }
+
+                                val frameBytesSize = (VIDEO_WIDTH * VIDEO_HEIGHT * 3) / 2
+                                encoder.queueInputBuffer(
+                                    inputBufferIndex,
+                                    0,
+                                    frameBytesSize,
+                                    presentationTimeUs,
+                                    0
+                                )
+
+                                currentFrame++
+                                val encodeProgress = (currentFrame.toFloat() / totalFrames).coerceIn(0f, 1f)
+                                val currentPercent = (encodeProgress * 100).toInt()
+                                if (currentPercent != lastReportedPercent) {
+                                    lastReportedPercent = currentPercent
+                                    onProgress("Merender video lirik ($currentFrame/$totalFrames frame)...", 0.40f + 0.45f * encodeProgress)
+                                }
+                            }
+                        }
+                    }
+
+                    // Drain output packets
+                    val outputBufferIndex = encoder.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
+                    if (outputBufferIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                        lastActivityNs = System.nanoTime()
+                        encoderOutputFormat = encoder.outputFormat
+                        muxSession.setVideoFormat(encoder.outputFormat)
+                        Timber.tag(TAG).d("Video encoder output format received: $encoderOutputFormat")
+                    } else if (outputBufferIndex >= 0) {
+                        lastActivityNs = System.nanoTime()
+                        val encodedData = encoder.getOutputBuffer(outputBufferIndex)
+                        if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
+                            if (encodedData != null && bufferInfo.size > 0) {
+                                encodedData.position(bufferInfo.offset)
+                                encodedData.limit(bufferInfo.offset + bufferInfo.size)
+                                val csdBytes = ByteArray(bufferInfo.size)
+                                encodedData.get(csdBytes)
+                                muxSession.feedVideoCodecConfig(csdBytes)
+                            }
+                            bufferInfo.size = 0
+                        }
+                        if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+                            isOutputEOS = true
+                        }
+
+                        if (encodedData != null && bufferInfo.size > 0) {
+                            if (encoderOutputFormat == null) {
+                                encoderOutputFormat = encoder.outputFormat
+                                muxSession.setVideoFormat(encoder.outputFormat)
+                            }
+                            encodedData.position(bufferInfo.offset)
+                            encodedData.limit(bufferInfo.offset + bufferInfo.size)
+                            val packetBytes = ByteArray(bufferInfo.size)
+                            encodedData.get(packetBytes)
+                            val isKeyFrame = (bufferInfo.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME) != 0
+                            muxSession.writeVideoSample(packetBytes, bufferInfo.presentationTimeUs, isKeyFrame)
+                            videoSamplesWritten++
+                        }
+
+                        encoder.releaseOutputBuffer(outputBufferIndex, false)
+                    }
+                }
+
+                if (videoSamplesWritten == 0) {
+                    error("Perangkat tidak dapat menghasilkan rekaman video. Silakan periksa izin atau coba lagi.")
+                }
+            } finally {
+                try { encoder.stop() } catch (_: Exception) {}
+                try { encoder.release() } catch (_: Exception) {}
+                try { frameBitmap?.recycle() } catch (_: Exception) {}
             }
 
             onProgress("Menggabungkan audio & video...", 0.88f)
