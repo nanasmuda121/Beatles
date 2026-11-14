@@ -111,11 +111,40 @@ object LevelGifManager {
         return getDownloadedCount(context) == gifItems.size
     }
 
-    fun getLoopGifFile(context: Context, level: Int): File? {
-        if (!_isGifEnabled.value) return null
+    fun getLoopGifFile(context: Context, level: Int, ignoreEnabled: Boolean = false): File? {
+        if (!ignoreEnabled && !_isGifEnabled.value) return null
         val safeLevel = level.coerceIn(1, 10)
         val file = File(getGifDir(context), "loop_$safeLevel.gif")
         return if (file.exists() && file.length() > 0) file else null
+    }
+
+    /**
+     * Parse total GIF animation duration in milliseconds from graphic control blocks.
+     * Defaults to 2000L (2.0s) if parsing fails.
+     */
+    fun getGifDurationMs(file: File?): Long {
+        if (file == null || !file.exists()) return 2000L
+        return try {
+            val bytes = file.readBytes()
+            var totalDelayMs = 0L
+            var idx = 0
+            while (idx < bytes.size - 7) {
+                if ((bytes[idx].toInt() and 0xFF) == 0x21 &&
+                    (bytes[idx + 1].toInt() and 0xFF) == 0xF9 &&
+                    (bytes[idx + 2].toInt() and 0xFF) == 0x04
+                ) {
+                    val delay = (bytes[idx + 4].toInt() and 0xFF) or ((bytes[idx + 5].toInt() and 0xFF) shl 8)
+                    val delayMs = (if (delay > 0) delay else 10) * 10L
+                    totalDelayMs += delayMs
+                    idx += 6
+                } else {
+                    idx++
+                }
+            }
+            if (totalDelayMs > 0L) totalDelayMs else 2000L
+        } catch (_: Throwable) {
+            2000L
+        }
     }
 
     fun getUpGifFile(context: Context, fromLevel: Int, toLevel: Int): File? {

@@ -4,32 +4,36 @@
 
 package com.nanzbeatles.nanas.ui.component
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -43,9 +47,9 @@ import androidx.compose.ui.window.DialogProperties
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
-import com.nanzbeatles.nanas.R
 import com.nanzbeatles.nanas.streak.LevelGifManager
 import com.nanzbeatles.nanas.streak.MusicJourneyManager
+import kotlinx.coroutines.delay
 
 @Composable
 fun LevelEmblemIcon(
@@ -81,6 +85,12 @@ fun LevelEmblemIcon(
     }
 }
 
+/**
+ * Immersive Fullscreen Level-Up Celebration.
+ * Plays the transition up_*.gif (e.g. up_6-7.gif), and automatically switches to the
+ * continuous loop_*.gif (e.g. loop_7.gif) when the transition duration completes.
+ * Dismissable by tapping anywhere on the screen.
+ */
 @Composable
 fun LevelUpCelebrationDialog(
     fromLevel: Int,
@@ -89,118 +99,158 @@ fun LevelUpCelebrationDialog(
 ) {
     val context = LocalContext.current
     val toSpec = MusicJourneyManager.allLevels.getOrElse(toLevel - 1) { MusicJourneyManager.allLevels.last() }
+
     val upGifFile = remember(fromLevel, toLevel) {
         LevelGifManager.getUpGifFile(context, fromLevel, toLevel)
     }
-    var replayKey by remember { mutableIntStateOf(0) }
+    val loopGifFile = remember(toLevel) {
+        LevelGifManager.getLoopGifFile(context, toLevel, ignoreEnabled = true)
+    }
+
+    var isShowingLoop by remember(fromLevel, toLevel) { mutableStateOf(false) }
+
+    LaunchedEffect(fromLevel, toLevel, upGifFile) {
+        if (upGifFile != null) {
+            val durationMs = LevelGifManager.getGifDurationMs(upGifFile)
+            delay(durationMs)
+            isShowingLoop = true
+        } else {
+            isShowingLoop = true
+        }
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
     ) {
-        Surface(
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp),
-            shape = RoundedCornerShape(28.dp),
-            color = Color(0xFF101218),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.22f))
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                Text(
-                    text = "🎉 SELAMAT! NAIK LEVEL! 🎉",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = Color.White,
-                    textAlign = TextAlign.Center
-                )
-
-                Text(
-                    text = "Dari Level $fromLevel ➔ Level $toLevel",
-                    fontSize = 12.5.sp,
-                    color = Color(0xFF94A3B8),
-                    textAlign = TextAlign.Center
-                )
-
-                if (upGifFile != null) {
-                    key(replayKey) {
-                        AsyncImage(
-                            model = ImageRequest.Builder(context)
-                                .data(upGifFile)
-                                .crossfade(true)
-                                .build(),
-                            contentDescription = "Animasi Naik Level",
-                            modifier = Modifier.size(175.dp),
-                            contentScale = ContentScale.Fit
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFF06070A),
+                            Color(0xFF0F111A),
+                            Color(0xFF06070A)
                         )
-                    }
-                } else {
-                    Image(
-                        painter = painterResource(toSpec.drawableResId),
-                        contentDescription = "Level ${toSpec.level}",
-                        modifier = Modifier.size(125.dp),
-                        contentScale = ContentScale.Fit
                     )
-                    Text(
-                        text = "Animasi GIF transparan belum diunduh.\nSilakan unduh paket GIF di menu Level untuk melihat animasi bergerak.",
-                        fontSize = 11.5.sp,
-                        color = Color(0xFFA0A6B4),
-                        textAlign = TextAlign.Center
+                )
+                .drawBehind {
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.12f),
+                                Color.White.copy(alpha = 0.04f),
+                                Color.Transparent
+                            ),
+                            center = center,
+                            radius = size.minDimension * 0.6f
+                        ),
+                        radius = size.minDimension * 0.6f,
+                        center = center
                     )
                 }
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onDismiss
+                )
+                .padding(horizontal = 24.dp, vertical = 32.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Spacer(modifier = Modifier.weight(1f))
+
+                Text(
+                    text = "🎉 SELAMAT! ANDA NAIK LEVEL! 🎉",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Black,
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                    letterSpacing = 0.5.sp
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Text(
+                    text = "Level $fromLevel ➔ Level $toLevel",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF67E8F9),
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(28.dp))
+
+                Box(
+                    modifier = Modifier.size(260.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    AnimatedContent(
+                        targetState = isShowingLoop,
+                        transitionSpec = {
+                            fadeIn(animationSpec = tween(350)) togetherWith fadeOut(animationSpec = tween(200))
+                        },
+                        label = "levelUpAnimationTransition"
+                    ) { showingLoop ->
+                        val currentGif = if (showingLoop) loopGifFile else upGifFile
+                        if (currentGif != null) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(context)
+                                    .data(currentGif)
+                                    .crossfade(true)
+                                    .build(),
+                                contentDescription = if (showingLoop) "Animasi Loop Level $toLevel" else "Animasi Kenaikan Level",
+                                modifier = Modifier.size(240.dp),
+                                contentScale = ContentScale.Fit
+                            )
+                        } else {
+                            Image(
+                                painter = painterResource(toSpec.drawableResId),
+                                contentDescription = "Level ${toSpec.level}",
+                                modifier = Modifier.size(160.dp),
+                                contentScale = ContentScale.Fit
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(28.dp))
 
                 Text(
                     text = "Level $toLevel — ${toSpec.title}",
-                    fontSize = 20.sp,
+                    fontSize = 24.sp,
                     fontWeight = FontWeight.ExtraBold,
                     color = Color.White,
                     textAlign = TextAlign.Center
                 )
 
+                Spacer(modifier = Modifier.height(6.dp))
+
                 Text(
                     text = toSpec.subtitle,
-                    fontSize = 13.sp,
+                    fontSize = 14.sp,
                     color = Color(0xFFCBD5E1),
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Center,
+                    lineHeight = 20.sp
                 )
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    if (upGifFile != null) {
-                        OutlinedButton(
-                            onClick = { replayKey++ },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(14.dp),
-                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f))
-                        ) {
-                            Icon(
-                                painter = painterResource(R.drawable.replay),
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Putar Ulang", fontSize = 12.sp, color = Color.White)
-                        }
-                    }
+                Spacer(modifier = Modifier.weight(1f))
 
-                    Button(
-                        onClick = onDismiss,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)
-                    ) {
-                        Text("Keren, Lanjutkan!", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
+                Text(
+                    text = "Klik di mana saja untuk menutup",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White.copy(alpha = 0.45f),
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }
