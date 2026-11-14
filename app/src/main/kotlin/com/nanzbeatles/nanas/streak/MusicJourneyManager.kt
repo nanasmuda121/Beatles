@@ -253,6 +253,7 @@ object MusicJourneyManager {
 
     fun ensureInitialized(context: Context) {
         val appContext = context.applicationContext
+        LevelGifManager.init(appContext)
         if (initialized.compareAndSet(false, true)) {
             scope.launch {
                 loadState(appContext)

@@ -272,6 +272,11 @@ class App : Application(), SingletonImageLoader.Factory {
             // has a maxresdefault image, which left video-song album art blank across the app.
             // hqdefault/sddefault exist for (essentially) every video, so they are safe fallbacks.
             components {
+                if (Build.VERSION.SDK_INT >= 28) {
+                    add(coil3.gif.AnimatedImageDecoder.Factory())
+                } else {
+                    add(coil3.gif.GifDecoder.Factory())
+                }
                 add(object : Interceptor {
                     override suspend fun intercept(chain: Interceptor.Chain): ImageResult {
                         val result = chain.proceed()

@@ -58,6 +58,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import com.nanzbeatles.nanas.streak.GifDownloadStatus
+import com.nanzbeatles.nanas.streak.LevelGifManager
+import com.nanzbeatles.nanas.ui.component.LevelEmblemIcon
+import com.nanzbeatles.nanas.ui.component.LevelUpCelebrationDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -320,6 +327,7 @@ fun ProfileScreen(
     // Dialog states
     var showEditProfileDialog by rememberSaveable { mutableStateOf(false) }
     var showLevelModal by rememberSaveable { mutableStateOf(false) }
+    var showLevelUpCelebration by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var showStreakModal by rememberSaveable { mutableStateOf(false) }
     var showDailyRecordModal by rememberSaveable { mutableStateOf(false) }
     var showMonthlyRecordModal by rememberSaveable { mutableStateOf(false) }
@@ -703,8 +711,9 @@ fun ProfileScreen(
                                     modifier = Modifier.weight(1f, fill = false)
                                 )
                                 VerifiedSealBadgeIcon(modifier = Modifier.size(19.dp))
-                                Image(
-                                    painter = painterResource(journeyState.levelSpec.drawableResId),
+                                LevelEmblemIcon(
+                                    level = journeyState.levelSpec.level,
+                                    staticResId = journeyState.levelSpec.drawableResId,
                                     contentDescription = "Badge Level ${journeyState.levelSpec.level}",
                                     modifier = Modifier
                                         .size(24.dp)
@@ -787,8 +796,9 @@ fun ProfileScreen(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Image(
-                            painter = painterResource(levelSpec.drawableResId),
+                        LevelEmblemIcon(
+                            level = levelSpec.level,
+                            staticResId = levelSpec.drawableResId,
                             contentDescription = "Level ${levelSpec.level}",
                             modifier = Modifier.size(68.dp),
                             contentScale = ContentScale.Fit
@@ -1685,7 +1695,18 @@ fun ProfileScreen(
                     arrayOf("application/json", "application/octet-stream", "*/*")
                 )
             },
+            onPreviewLevelUp = { from, to ->
+                showLevelUpCelebration = from to to
+            },
             onDismiss = { showLevelModal = false }
+        )
+    }
+
+    showLevelUpCelebration?.let { (from, to) ->
+        LevelUpCelebrationDialog(
+            fromLevel = from,
+            toLevel = to,
+            onDismiss = { showLevelUpCelebration = null }
         )
     }
 
@@ -2834,9 +2855,17 @@ private fun ListenerLevelsModalDialog(
     effectiveStreakDays: Int,
     onExportStatsFile: () -> Unit,
     onImportStatsFile: () -> Unit,
+    onPreviewLevelUp: (from: Int, to: Int) -> Unit = { _, _ -> },
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
+    val isGifEnabled by LevelGifManager.isGifEnabled.collectAsState()
+    val downloadStatus by LevelGifManager.downloadStatus.collectAsState()
+    val downloadedCount = remember(downloadStatus, isGifEnabled) {
+        LevelGifManager.getDownloadedCount(context)
+    }
+    val allDownloaded = downloadedCount == LevelGifManager.gifItems.size
+
     var showStatEditor by rememberSaveable { mutableStateOf(false) }
     var customXpText by rememberSaveable(journeyState.xp) { mutableStateOf(journeyState.xp.toString()) }
     var customHoursText by rememberSaveable(journeyState.totalHours) { mutableStateOf(journeyState.totalHours.toString()) }
@@ -2865,8 +2894,9 @@ private fun ListenerLevelsModalDialog(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Image(
-                        painter = painterResource(journeyState.levelSpec.drawableResId),
+                    LevelEmblemIcon(
+                        level = journeyState.levelSpec.level,
+                        staticResId = journeyState.levelSpec.drawableResId,
                         contentDescription = "Level ${journeyState.levelSpec.level}",
                         modifier = Modifier.size(56.dp),
                         contentScale = ContentScale.Fit
@@ -2887,6 +2917,180 @@ private fun ListenerLevelsModalDialog(
                             color = Color(0xFFCBD5E1),
                             maxLines = 1
                         )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // =============================================================
+                // PAKET ANIMASI GIF LEVEL (TRANSPARAN)
+                // =============================================================
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color(0xFF161820))
+                        .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(16.dp))
+                        .padding(14.dp)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.star),
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Column {
+                                    Text(
+                                        text = "Animasi GIF Transparan",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                    Text(
+                                        text = if (allDownloaded && isGifEnabled) {
+                                            "19/19 File Siap • Animasi Aktif"
+                                        } else if (allDownloaded) {
+                                            "19/19 File Siap • Animasi Nonaktif"
+                                        } else {
+                                            "$downloadedCount/19 File terunduh"
+                                        },
+                                        fontSize = 11.sp,
+                                        color = if (allDownloaded && isGifEnabled) Color(0xFF86EFAC) else Color(0xFF989EA9)
+                                    )
+                                }
+                            }
+
+                            if (allDownloaded) {
+                                Switch(
+                                    checked = isGifEnabled,
+                                    onCheckedChange = { checked ->
+                                        LevelGifManager.setGifIconsEnabled(context, checked)
+                                    },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color.Black,
+                                        checkedTrackColor = Color.White,
+                                        uncheckedThumbColor = Color(0xFF989EA9),
+                                        uncheckedTrackColor = Color(0xFF232732)
+                                    )
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = "Unduh paket GIF untuk mengganti icon statis dengan animasi transparan berulang (loop) dan menampilkan animasi kenaikan level.",
+                            fontSize = 11.5.sp,
+                            color = Color(0xFFA0A6B4),
+                            lineHeight = 16.sp
+                        )
+
+                        when (val status = downloadStatus) {
+                            is GifDownloadStatus.Downloading -> {
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    LinearProgressIndicator(
+                                        progress = { status.progress },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(6.dp)
+                                            .clip(CircleShape),
+                                        color = Color.White,
+                                        trackColor = Color.White.copy(alpha = 0.12f)
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = "Mengunduh ${status.currentFile}...",
+                                            fontSize = 11.sp,
+                                            color = Color.White,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = "${status.completed}/${status.total} (${(status.progress * 100).toInt()}%)",
+                                            fontSize = 11.sp,
+                                            color = Color(0xFFCBD5E1),
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                            is GifDownloadStatus.Error -> {
+                                Text(
+                                    text = "Error: ${status.message}",
+                                    color = Color(0xFFF87171),
+                                    fontSize = 11.5.sp
+                                )
+                                Button(
+                                    onClick = { LevelGifManager.startDownload(context) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)
+                                ) {
+                                    Text("Coba Unduh Lagi", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                            else -> {
+                                if (!allDownloaded) {
+                                    Button(
+                                        onClick = { LevelGifManager.startDownload(context) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)
+                                    ) {
+                                        Icon(
+                                            painter = painterResource(R.drawable.download),
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Unduh Semua Animasi GIF (19 File)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                } else {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                val from = (journeyState.levelSpec.level - 1).coerceAtLeast(1)
+                                                val to = journeyState.levelSpec.level.coerceAtLeast(2)
+                                                onPreviewLevelUp(from, to)
+                                            },
+                                            modifier = Modifier.weight(1f),
+                                            shape = RoundedCornerShape(10.dp),
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f))
+                                        ) {
+                                            Text("Pratinjau Animasi", fontSize = 11.sp, color = Color.White, maxLines = 1)
+                                        }
+
+                                        OutlinedButton(
+                                            onClick = {
+                                                LevelGifManager.deleteGifs(context)
+                                            },
+                                            modifier = Modifier.weight(1f),
+                                            shape = RoundedCornerShape(10.dp),
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                                            border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.5f))
+                                        ) {
+                                            Text("Hapus GIF", fontSize = 11.sp, color = Color(0xFFFCA5A5), maxLines = 1)
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -2919,12 +3123,18 @@ private fun ListenerLevelsModalDialog(
                                 color = if (isCurrent) Color.White.copy(alpha = 0.55f) else Color.White.copy(alpha = 0.08f),
                                 shape = RoundedCornerShape(12.dp)
                             )
+                            .clickable {
+                                if (spec.level > 1) {
+                                    onPreviewLevelUp(spec.level - 1, spec.level)
+                                }
+                            }
                             .padding(horizontal = 10.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Image(
-                            painter = painterResource(spec.drawableResId),
+                        LevelEmblemIcon(
+                            level = spec.level,
+                            staticResId = spec.drawableResId,
                             contentDescription = "Level ${spec.level}",
                             modifier = Modifier.size(38.dp),
                             contentScale = ContentScale.Fit
