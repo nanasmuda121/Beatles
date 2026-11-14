@@ -2850,7 +2850,7 @@ private fun ListenerLevelsModalDialog(
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 20.dp),
+                .padding(horizontal = 12.dp, vertical = 16.dp),
             shape = RoundedCornerShape(26.dp),
             color = Color(0xFF0E1015),
             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.20f))
@@ -2859,7 +2859,7 @@ private fun ListenerLevelsModalDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
-                    .padding(20.dp)
+                    .padding(16.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -2970,17 +2970,31 @@ private fun ListenerLevelsModalDialog(
                         onClick = onExportStatsFile,
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
                         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f))
                     ) {
-                        Text("Cadangkan Statistik", fontSize = 11.5.sp, color = Color.White)
+                        Text(
+                            text = "Cadangkan Statistik",
+                            fontSize = 11.sp,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                     OutlinedButton(
                         onClick = onImportStatsFile,
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
                         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f))
                     ) {
-                        Text("Pulihkan Statistik", fontSize = 11.5.sp, color = Color.White)
+                        Text(
+                            text = "Pulihkan Statistik",
+                            fontSize = 11.sp,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
 

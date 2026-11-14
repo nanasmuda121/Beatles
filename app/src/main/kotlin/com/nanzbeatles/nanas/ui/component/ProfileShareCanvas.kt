@@ -536,8 +536,10 @@ object ProfileShareCanvasRenderer {
         drawVerifiedSeal(canvas, infoX + measuredNameW + 24f, nameY - 15f, 18f)
 
         val badgeX = infoX + measuredNameW + 54f
-        val levelBadgeBmp = tryOrNull {
+        val levelBadgeBmp: Bitmap? = try {
             BitmapFactory.decodeResource(context.resources, data.journeyState.levelSpec.drawableResId)
+        } catch (_: Throwable) {
+            null
         }
         if (levelBadgeBmp != null) {
             val badgeDst = RectF(badgeX, nameY - 33f, badgeX + 38f, nameY + 5f)
@@ -599,8 +601,10 @@ object ProfileShareCanvasRenderer {
         canvas.drawCircle(levelRect.left + 125f, levelRect.centerY(), 170f, paint)
         paint.shader = null
 
-        val levelIconBmp = tryOrNull {
+        val levelIconBmp: Bitmap? = try {
             BitmapFactory.decodeResource(context.resources, levelSpec.drawableResId)
+        } catch (_: Throwable) {
+            null
         }
         if (levelIconBmp != null) {
             val iconDst = RectF(
