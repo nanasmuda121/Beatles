@@ -8,18 +8,26 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -35,6 +43,7 @@ import androidx.compose.ui.window.DialogProperties
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
+import com.nanzbeatles.nanas.R
 import com.nanzbeatles.nanas.streak.LevelGifManager
 import com.nanzbeatles.nanas.streak.MusicJourneyManager
 
@@ -83,6 +92,7 @@ fun LevelUpCelebrationDialog(
     val upGifFile = remember(fromLevel, toLevel) {
         LevelGifManager.getUpGifFile(context, fromLevel, toLevel)
     }
+    var replayKey by remember { mutableIntStateOf(0) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -111,22 +121,37 @@ fun LevelUpCelebrationDialog(
                     textAlign = TextAlign.Center
                 )
 
+                Text(
+                    text = "Dari Level $fromLevel ➔ Level $toLevel",
+                    fontSize = 12.5.sp,
+                    color = Color(0xFF94A3B8),
+                    textAlign = TextAlign.Center
+                )
+
                 if (upGifFile != null) {
-                    AsyncImage(
-                        model = ImageRequest.Builder(context)
-                            .data(upGifFile)
-                            .crossfade(true)
-                            .build(),
-                        contentDescription = "Animasi Naik Level",
-                        modifier = Modifier.size(170.dp),
-                        contentScale = ContentScale.Fit
-                    )
+                    key(replayKey) {
+                        AsyncImage(
+                            model = ImageRequest.Builder(context)
+                                .data(upGifFile)
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = "Animasi Naik Level",
+                            modifier = Modifier.size(175.dp),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
                 } else {
                     Image(
                         painter = painterResource(toSpec.drawableResId),
                         contentDescription = "Level ${toSpec.level}",
-                        modifier = Modifier.size(120.dp),
+                        modifier = Modifier.size(125.dp),
                         contentScale = ContentScale.Fit
+                    )
+                    Text(
+                        text = "Animasi GIF transparan belum diunduh.\nSilakan unduh paket GIF di menu Level untuk melihat animasi bergerak.",
+                        fontSize = 11.5.sp,
+                        color = Color(0xFFA0A6B4),
+                        textAlign = TextAlign.Center
                     )
                 }
 
@@ -145,13 +170,36 @@ fun LevelUpCelebrationDialog(
                     textAlign = TextAlign.Center
                 )
 
-                Button(
-                    onClick = onDismiss,
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text("Keren, Lanjutkan!", fontWeight = FontWeight.Bold)
+                    if (upGifFile != null) {
+                        OutlinedButton(
+                            onClick = { replayKey++ },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f))
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.replay),
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Putar Ulang", fontSize = 12.sp, color = Color.White)
+                        }
+                    }
+
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)
+                    ) {
+                        Text("Keren, Lanjutkan!", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }

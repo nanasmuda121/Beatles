@@ -328,6 +328,12 @@ fun ProfileScreen(
     var showEditProfileDialog by rememberSaveable { mutableStateOf(false) }
     var showLevelModal by rememberSaveable { mutableStateOf(false) }
     var showLevelUpCelebration by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+
+    LaunchedEffect(Unit) {
+        MusicJourneyManager.levelUpEvent.collect { (from, to) ->
+            showLevelUpCelebration = from to to
+        }
+    }
     var showStreakModal by rememberSaveable { mutableStateOf(false) }
     var showDailyRecordModal by rememberSaveable { mutableStateOf(false) }
     var showMonthlyRecordModal by rememberSaveable { mutableStateOf(false) }
@@ -833,12 +839,30 @@ fun ProfileScreen(
 
                                 Spacer(modifier = Modifier.width(6.dp))
 
-                                Icon(
-                                    painter = painterResource(R.drawable.navigate_next),
-                                    contentDescription = "Lihat Level",
-                                    tint = Color.White.copy(alpha = 0.72f),
-                                    modifier = Modifier.size(22.dp)
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = Color.White.copy(alpha = 0.12f),
+                                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.22f))
+                                    ) {
+                                        Text(
+                                            text = "Edit Level",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color.White,
+                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                                        )
+                                    }
+                                    Icon(
+                                        painter = painterResource(R.drawable.navigate_next),
+                                        contentDescription = "Lihat & Edit Level",
+                                        tint = Color.White.copy(alpha = 0.72f),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
                             }
 
                             Spacer(modifier = Modifier.height(2.dp))
@@ -3096,8 +3120,201 @@ private fun ListenerLevelsModalDialog(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
+                // =========================================================================
+                // CARD EDIT LEVEL & TES ANIMASI NAIK LEVEL
+                // =========================================================================
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color(0xFF161820),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.edit),
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Column {
+                                    Text(
+                                        text = "Edit Level (Tes Naik Level)",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "Atur level langsung untuk uji animasi",
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF989EA9),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color.White.copy(alpha = 0.12f),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.22f))
+                            ) {
+                                Text(
+                                    text = "Lv.${journeyState.levelSpec.level}",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = "Pilih tombol level di bawah atau gunakan tombol naik/turun untuk mencoba pergantian badge dan melihat animasi kenaikan level:",
+                            fontSize = 11.5.sp,
+                            color = Color(0xFFA0A6B4),
+                            lineHeight = 16.sp
+                        )
+
+                        // 10 Level Quick Selector Grid (2 rows of 5)
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(1..5, 6..10).forEach { range ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    range.forEach { lvl ->
+                                        val isCurrent = lvl == journeyState.levelSpec.level
+                                        OutlinedButton(
+                                            onClick = {
+                                                MusicJourneyManager.setCustomLevel(
+                                                    context = context,
+                                                    targetLevel = lvl,
+                                                    triggerCelebration = true
+                                                )
+                                            },
+                                            modifier = Modifier.weight(1f),
+                                            shape = RoundedCornerShape(8.dp),
+                                            contentPadding = PaddingValues(horizontal = 2.dp, vertical = 6.dp),
+                                            colors = ButtonDefaults.outlinedButtonColors(
+                                                containerColor = if (isCurrent) Color.White else Color.Transparent,
+                                                contentColor = if (isCurrent) Color.Black else Color.White
+                                            ),
+                                            border = BorderStroke(
+                                                width = 1.dp,
+                                                color = if (isCurrent) Color.White else Color.White.copy(alpha = 0.22f)
+                                            )
+                                        ) {
+                                            Text(
+                                                text = "Lv.$lvl",
+                                                fontSize = 11.sp,
+                                                fontWeight = if (isCurrent) FontWeight.ExtraBold else FontWeight.Medium,
+                                                maxLines = 1
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Stepper row: [- 1 Level] and [+ 1 Level (Tes Animasi)]
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    MusicJourneyManager.levelDownOne(context)
+                                },
+                                enabled = journeyState.levelSpec.level > 1,
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f))
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.remove),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Turun 1 Level", fontSize = 11.sp, maxLines = 1)
+                            }
+
+                            Button(
+                                onClick = {
+                                    MusicJourneyManager.levelUpOne(context)
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color.White,
+                                    contentColor = Color.Black
+                                )
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.add),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Naik 1 Level", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                            }
+                        }
+
+                        // Dedicated button to test / replay up animation for the current level
+                        OutlinedButton(
+                            onClick = {
+                                val current = journeyState.levelSpec.level
+                                val from = (current - 1).coerceAtLeast(1)
+                                val to = current.coerceAtLeast(2)
+                                onPreviewLevelUp(from, to)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f))
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.play),
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            val current = journeyState.levelSpec.level
+                            val from = (current - 1).coerceAtLeast(1)
+                            val to = current.coerceAtLeast(2)
+                            Text(
+                                text = "Tes Animasi Naik Level (Lv.$from ➔ Lv.$to)",
+                                fontSize = 11.5.sp,
+                                color = Color.White,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
                 Text(
-                    text = "Daftar 10 Level & Gelar Pendengar",
+                    text = "Daftar 10 Level & Gelar Pendengar (Ketuk untuk Pilih)",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
@@ -3124,9 +3341,11 @@ private fun ListenerLevelsModalDialog(
                                 shape = RoundedCornerShape(12.dp)
                             )
                             .clickable {
-                                if (spec.level > 1) {
-                                    onPreviewLevelUp(spec.level - 1, spec.level)
-                                }
+                                MusicJourneyManager.setCustomLevel(
+                                    context = context,
+                                    targetLevel = spec.level,
+                                    triggerCelebration = true
+                                )
                             }
                             .padding(horizontal = 10.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -3259,6 +3478,38 @@ private fun ListenerLevelsModalDialog(
                                         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f))
                                     ) {
                                         Text(label, fontSize = 10.sp, color = Color.White, maxLines = 1)
+                                    }
+                                }
+                            }
+                        }
+
+                        Text(
+                            text = "Uji Coba Level Pendengar:",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        MusicJourneyManager.allLevels.chunked(5).forEach { rowLevels ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                rowLevels.forEach { spec ->
+                                    val isCurrent = spec.level == journeyState.levelSpec.level
+                                    OutlinedButton(
+                                        onClick = {
+                                            MusicJourneyManager.setCustomLevel(context, spec.level, triggerCelebration = true)
+                                            customXpText = spec.xpThreshold.toString()
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp),
+                                        colors = ButtonDefaults.outlinedButtonColors(
+                                            containerColor = if (isCurrent) Color.White else Color.Transparent,
+                                            contentColor = if (isCurrent) Color.Black else Color.White
+                                        ),
+                                        border = BorderStroke(1.dp, if (isCurrent) Color.White else Color.White.copy(alpha = 0.25f))
+                                    ) {
+                                        Text("Lv.${spec.level}", fontSize = 10.sp, maxLines = 1)
                                     }
                                 }
                             }

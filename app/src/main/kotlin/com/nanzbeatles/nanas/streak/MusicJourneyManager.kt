@@ -18,8 +18,11 @@ import com.nanzbeatles.nanas.utils.dataStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -105,7 +108,14 @@ data class MusicJourneyState(
     val weekdaySeconds: List<Long> = listOf(0L, 0L, 0L, 0L, 0L, 0L, 0L),
 ) {
     val levelSpec: ListenerLevelSpec
-        get() = MusicJourneyManager.resolveLevelSpec(xp, null)
+        get() {
+            val byXp = MusicJourneyManager.resolveLevelSpec(xp, null)
+            return if (level in 1..10 && level > byXp.level) {
+                MusicJourneyManager.allLevels[level - 1]
+            } else {
+                byXp
+            }
+        }
 
     val xpTargetForCurrentBanner: Int
         get() = levelSpec.nextXpTarget
@@ -206,6 +216,13 @@ object MusicJourneyManager {
 
     private val _state = MutableStateFlow(MusicJourneyState())
     val state: StateFlow<MusicJourneyState> = _state.asStateFlow()
+
+    private val _levelUpEvent = MutableSharedFlow<Pair<Int, Int>>(extraBufferCapacity = 10)
+    val levelUpEvent: SharedFlow<Pair<Int, Int>> = _levelUpEvent.asSharedFlow()
+
+    fun triggerLevelUpCelebration(fromLevel: Int, toLevel: Int) {
+        _levelUpEvent.tryEmit(fromLevel to toLevel)
+    }
 
     /**
      * Exact 10-Level system specified by the user:
@@ -401,8 +418,64 @@ object MusicJourneyManager {
                 dailyHistory = updatedDailyList.take(14),
                 weekdaySeconds = updatedWeekdays,
             )
+            if (newSpec.level > current.level) {
+                _levelUpEvent.tryEmit(current.level to newSpec.level)
+            }
             _state.value = updated
             persistState(appContext, updated)
+        }
+    }
+
+    /**
+     * Manually set custom level for testing or user customization.
+     * Updates both level and threshold XP, and optionally triggers celebratory animation.
+     */
+    fun setCustomLevel(context: Context, targetLevel: Int, triggerCelebration: Boolean = true) {
+        val appContext = context.applicationContext
+        scope.launch {
+            if (!initialized.get()) {
+                initialized.set(true)
+                loadState(appContext)
+            }
+            val current = _state.value
+            val previousLevel = current.levelSpec.level
+            val clampedLevel = targetLevel.coerceIn(1, 10)
+            val spec = allLevels[clampedLevel - 1]
+
+            val updated = current.copy(
+                level = clampedLevel,
+                xp = spec.xpThreshold,
+            )
+            _state.value = updated
+            persistState(appContext, updated)
+
+            if (triggerCelebration) {
+                val from = if (clampedLevel > previousLevel) previousLevel else (clampedLevel - 1).coerceAtLeast(1)
+                val to = clampedLevel.coerceAtLeast(2)
+                _levelUpEvent.tryEmit(from to to)
+            }
+        }
+    }
+
+    /**
+     * Increment level by 1 and immediately trigger the level-up celebratory animation.
+     */
+    fun levelUpOne(context: Context) {
+        val current = _state.value.levelSpec.level
+        if (current < 10) {
+            setCustomLevel(context, current + 1, triggerCelebration = true)
+        } else {
+            _levelUpEvent.tryEmit(9 to 10)
+        }
+    }
+
+    /**
+     * Decrement level by 1 (no animation) so user can test leveling up again.
+     */
+    fun levelDownOne(context: Context) {
+        val current = _state.value.levelSpec.level
+        if (current > 1) {
+            setCustomLevel(context, current - 1, triggerCelebration = false)
         }
     }
 

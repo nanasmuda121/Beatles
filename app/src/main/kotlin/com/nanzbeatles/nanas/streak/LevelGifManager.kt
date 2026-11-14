@@ -119,8 +119,17 @@ object LevelGifManager {
     }
 
     fun getUpGifFile(context: Context, fromLevel: Int, toLevel: Int): File? {
-        val file = File(getGifDir(context), "up_$fromLevel-$toLevel.gif")
-        return if (file.exists() && file.length() > 0) file else null
+        val dir = getGifDir(context)
+        val direct = File(dir, "up_$fromLevel-$toLevel.gif")
+        if (direct.exists() && direct.length() > 0) return direct
+
+        val safeTo = toLevel.coerceIn(2, 10)
+        val stepFallback = File(dir, "up_${safeTo - 1}-$safeTo.gif")
+        if (stepFallback.exists() && stepFallback.length() > 0) return stepFallback
+
+        val anyUp = File(dir, "up_1-2.gif")
+        if (anyUp.exists() && anyUp.length() > 0) return anyUp
+        return null
     }
 
     fun getTotalSizeBytes(context: Context): Long {
