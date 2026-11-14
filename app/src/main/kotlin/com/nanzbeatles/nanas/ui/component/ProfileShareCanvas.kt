@@ -535,6 +535,15 @@ object ProfileShareCanvasRenderer {
         val measuredNameW = textPaint.measureText(fittedName)
         drawVerifiedSeal(canvas, infoX + measuredNameW + 24f, nameY - 15f, 18f)
 
+        val badgeX = infoX + measuredNameW + 54f
+        val levelBadgeBmp = tryOrNull {
+            BitmapFactory.decodeResource(context.resources, data.journeyState.levelSpec.drawableResId)
+        }
+        if (levelBadgeBmp != null) {
+            val badgeDst = RectF(badgeX, nameY - 33f, badgeX + 38f, nameY + 5f)
+            canvas.drawBitmap(levelBadgeBmp, null, badgeDst, null)
+        }
+
         textPaint.typeface = mediumTypeface
         textPaint.textSize = 29f
         textPaint.color = AndroidColor.parseColor("#D0D5E0")
@@ -590,12 +599,25 @@ object ProfileShareCanvasRenderer {
         canvas.drawCircle(levelRect.left + 125f, levelRect.centerY(), 170f, paint)
         paint.shader = null
 
-        drawWingedHexHeadphoneEmblem(
-            canvas = canvas,
-            cx = levelRect.left + 118f,
-            cy = levelRect.centerY(),
-            size = 152f
-        )
+        val levelIconBmp = tryOrNull {
+            BitmapFactory.decodeResource(context.resources, levelSpec.drawableResId)
+        }
+        if (levelIconBmp != null) {
+            val iconDst = RectF(
+                levelRect.left + 48f,
+                levelRect.centerY() - 70f,
+                levelRect.left + 188f,
+                levelRect.centerY() + 70f
+            )
+            canvas.drawBitmap(levelIconBmp, null, iconDst, null)
+        } else {
+            drawWingedHexHeadphoneEmblem(
+                canvas = canvas,
+                cx = levelRect.left + 118f,
+                cy = levelRect.centerY(),
+                size = 152f
+            )
+        }
 
         val lvTextX = levelRect.left + 226f
         textPaint.typeface = mediumTypeface

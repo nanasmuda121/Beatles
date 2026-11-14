@@ -7,6 +7,7 @@ package com.nanzbeatles.nanas.streak
 import android.content.Context
 import android.net.Uri
 import androidx.datastore.preferences.core.edit
+import com.nanzbeatles.nanas.R
 import com.nanzbeatles.nanas.constants.ProfileJourneyJsonV2Key
 import com.nanzbeatles.nanas.constants.ProfileLocalBioV2Key
 import com.nanzbeatles.nanas.constants.ProfileLocalHandleV2Key
@@ -39,7 +40,22 @@ data class ListenerLevelSpec(
     val xpThreshold: Int,
     val nextXpTarget: Int,
     val subtitle: String,
-)
+) {
+    val drawableResId: Int
+        get() = when (level) {
+            1 -> R.drawable.level_1
+            2 -> R.drawable.level_2
+            3 -> R.drawable.level_3
+            4 -> R.drawable.level_4
+            5 -> R.drawable.level_5
+            6 -> R.drawable.level_6
+            7 -> R.drawable.level_7
+            8 -> R.drawable.level_8
+            9 -> R.drawable.level_9
+            10 -> R.drawable.level_10
+            else -> R.drawable.level_1
+        }
+}
 
 enum class SummaryPeriodFilter(val label: String) {
     ALL("Semua"),

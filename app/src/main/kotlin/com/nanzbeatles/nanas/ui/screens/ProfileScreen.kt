@@ -26,6 +26,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -690,7 +691,7 @@ fun ProfileScreen(
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(7.dp)
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Text(
                                     text = displayName,
@@ -698,9 +699,18 @@ fun ProfileScreen(
                                     fontWeight = FontWeight.ExtraBold,
                                     color = Color.White,
                                     maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
                                 )
                                 VerifiedSealBadgeIcon(modifier = Modifier.size(19.dp))
+                                Image(
+                                    painter = painterResource(journeyState.levelSpec.drawableResId),
+                                    contentDescription = "Badge Level ${journeyState.levelSpec.level}",
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .clickable { showLevelModal = true },
+                                    contentScale = ContentScale.Fit
+                                )
                             }
 
                             Spacer(modifier = Modifier.height(2.dp))
@@ -777,8 +787,11 @@ fun ProfileScreen(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        WingedHexHeadphoneBadge(
-                            modifier = Modifier.size(72.dp)
+                        Image(
+                            painter = painterResource(levelSpec.drawableResId),
+                            contentDescription = "Level ${levelSpec.level}",
+                            modifier = Modifier.size(68.dp),
+                            contentScale = ContentScale.Fit
                         )
 
                         Spacer(modifier = Modifier.width(14.dp))
@@ -789,20 +802,26 @@ fun ProfileScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column {
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = "Level ${levelSpec.level}",
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = Color(0xFFD0D5E0)
+                                        color = Color(0xFFD0D5E0),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
                                         text = levelSpec.title,
-                                        fontSize = 20.sp,
+                                        fontSize = 19.sp,
                                         fontWeight = FontWeight.ExtraBold,
-                                        color = Color.White
+                                        color = Color.White,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
+
+                                Spacer(modifier = Modifier.width(6.dp))
 
                                 Icon(
                                     painter = painterResource(R.drawable.navigate_next),
@@ -816,8 +835,10 @@ fun ProfileScreen(
 
                             Text(
                                 text = levelSpec.subtitle,
-                                fontSize = 12.5.sp,
-                                color = Color(0xFF989EA9)
+                                fontSize = 12.sp,
+                                color = Color(0xFF989EA9),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
 
                             Spacer(modifier = Modifier.height(10.dp))
@@ -872,7 +893,9 @@ fun ProfileScreen(
                                         ) {
                                             append(" / ${formatDotNumber(journeyState.xpTargetForCurrentBanner)} XP")
                                         }
-                                    }
+                                    },
+                                    maxLines = 1,
+                                    softWrap = false
                                 )
                             }
                         }
@@ -915,7 +938,7 @@ fun ProfileScreen(
                             }
                             .border(1.dp, cardBorderBrush, RoundedCornerShape(18.dp))
                             .clickable { showStreakModal = true }
-                            .padding(horizontal = 11.dp, vertical = 12.dp)
+                            .padding(horizontal = 9.dp, vertical = 11.dp)
                             .testTag("profile_streak_card")
                     ) {
                         Column(
@@ -923,42 +946,45 @@ fun ProfileScreen(
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
                             ) {
                                 StreakFlameIcon(
                                     flame = activeFlameVisual,
-                                    size = 34.dp,
+                                    size = 30.dp,
                                     animated = true,
                                     animationTriggerToken = streakState.animationTriggerToken
                                 )
-                                Column {
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = "Streak",
-                                        fontSize = 11.5.sp,
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.Medium,
-                                        color = Color(0xFFB0B6C2)
+                                        color = Color(0xFFB0B6C2),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
                                         text = "$effectiveStreakDays Hari",
-                                        fontSize = 16.5.sp,
+                                        fontSize = 15.sp,
                                         fontWeight = FontWeight.ExtraBold,
                                         color = Color.White,
-                                        maxLines = 1
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
 
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 MiniColorfulFlameIcon(
                                     flameColor = if (effectiveStreakDays > 0) activeFlameVisual.midColor else Color(0xFF94A3B8),
-                                    modifier = Modifier.size(13.dp)
+                                    modifier = Modifier.size(12.dp)
                                 )
                                 Text(
                                     text = if (effectiveStreakDays == 0) "Mulai dengar!" else "Terus dengar!",
-                                    fontSize = 11.sp,
+                                    fontSize = 10.5.sp,
                                     fontWeight = FontWeight.Medium,
                                     color = Color(0xFFA0A6B4),
                                     maxLines = 1,
@@ -976,7 +1002,7 @@ fun ProfileScreen(
                             .background(cardBgBrush, RoundedCornerShape(18.dp))
                             .border(1.dp, cardBorderBrush, RoundedCornerShape(18.dp))
                             .clickable { showDailyRecordModal = true }
-                            .padding(horizontal = 11.dp, vertical = 12.dp)
+                            .padding(horizontal = 9.dp, vertical = 11.dp)
                             .testTag("profile_daily_record_card")
                     ) {
                         Column(
@@ -984,35 +1010,37 @@ fun ProfileScreen(
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(7.dp)
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
                             ) {
-                                MonochromeClockIcon(modifier = Modifier.size(28.dp))
-                                Column {
+                                MonochromeClockIcon(modifier = Modifier.size(26.dp))
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = "Rekor Harian",
-                                        fontSize = 11.sp,
+                                        fontSize = 10.5.sp,
                                         fontWeight = FontWeight.Medium,
                                         color = Color(0xFFB0B6C2),
-                                        maxLines = 1
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
                                         text = journeyState.dailyRecordCompactText,
-                                        fontSize = 16.5.sp,
+                                        fontSize = 15.sp,
                                         fontWeight = FontWeight.ExtraBold,
                                         color = Color.White,
-                                        maxLines = 1
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
 
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                MonochromeStarIcon(modifier = Modifier.size(13.dp))
+                                MonochromeStarIcon(modifier = Modifier.size(12.dp))
                                 Text(
                                     text = "Hari terbaik!",
-                                    fontSize = 11.sp,
+                                    fontSize = 10.5.sp,
                                     fontWeight = FontWeight.Medium,
                                     color = Color(0xFFA0A6B4),
                                     maxLines = 1,
@@ -1030,7 +1058,7 @@ fun ProfileScreen(
                             .background(cardBgBrush, RoundedCornerShape(18.dp))
                             .border(1.dp, cardBorderBrush, RoundedCornerShape(18.dp))
                             .clickable { showMonthlyRecordModal = true }
-                            .padding(horizontal = 11.dp, vertical = 12.dp)
+                            .padding(horizontal = 9.dp, vertical = 11.dp)
                             .testTag("profile_monthly_record_card")
                     ) {
                         Column(
@@ -1038,35 +1066,37 @@ fun ProfileScreen(
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(7.dp)
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
                             ) {
-                                MonochromeCalendarIcon(modifier = Modifier.size(28.dp))
-                                Column {
+                                MonochromeCalendarIcon(modifier = Modifier.size(26.dp))
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = "Rekor Bulanan",
-                                        fontSize = 11.sp,
+                                        fontSize = 10.5.sp,
                                         fontWeight = FontWeight.Medium,
                                         color = Color(0xFFB0B6C2),
-                                        maxLines = 1
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
                                         text = journeyState.monthlyRecordHoursText,
-                                        fontSize = 16.5.sp,
+                                        fontSize = 15.sp,
                                         fontWeight = FontWeight.ExtraBold,
                                         color = Color.White,
-                                        maxLines = 1
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
 
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                MonochromeCrownIcon(modifier = Modifier.size(13.dp))
+                                MonochromeCrownIcon(modifier = Modifier.size(12.dp))
                                 Text(
                                     text = "Bulan terbaik!",
-                                    fontSize = 11.sp,
+                                    fontSize = 10.5.sp,
                                     fontWeight = FontWeight.Medium,
                                     color = Color(0xFFA0A6B4),
                                     maxLines = 1,
@@ -2835,19 +2865,27 @@ private fun ListenerLevelsModalDialog(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    WingedHexHeadphoneBadge(modifier = Modifier.size(54.dp))
+                    Image(
+                        painter = painterResource(journeyState.levelSpec.drawableResId),
+                        contentDescription = "Level ${journeyState.levelSpec.level}",
+                        modifier = Modifier.size(56.dp),
+                        contentScale = ContentScale.Fit
+                    )
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "Level ${journeyState.levelSpec.level} – ${journeyState.levelSpec.title}",
                             fontSize = 18.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            color = Color.White
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Text(
                             text = "${formatDotNumber(journeyState.xp)} / ${formatDotNumber(journeyState.xpTargetForCurrentBanner)} XP",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFFCBD5E1)
+                            color = Color(0xFFCBD5E1),
+                            maxLines = 1
                         )
                     }
                 }
@@ -2878,51 +2916,45 @@ private fun ListenerLevelsModalDialog(
                             )
                             .border(
                                 width = 1.dp,
-                                color = if (isCurrent) Color.White.copy(alpha = 0.55f) else Color.White.copy(alpha = 0.06f),
+                                color = if (isCurrent) Color.White.copy(alpha = 0.55f) else Color.White.copy(alpha = 0.08f),
                                 shape = RoundedCornerShape(12.dp)
                             )
-                            .padding(horizontal = 12.dp, vertical = 9.dp),
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(28.dp)
-                                    .clip(CircleShape)
-                                    .background(if (isCurrent) Color.White else Color.White.copy(alpha = 0.10f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "${spec.level}",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = if (isCurrent) Color.Black else Color.White
-                                )
-                            }
-                            Column {
-                                Text(
-                                    text = spec.title,
-                                    fontSize = 13.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
-                                Text(
-                                    text = spec.subtitle,
-                                    fontSize = 11.sp,
-                                    color = Color(0xFF989EA9)
-                                )
-                            }
+                        Image(
+                            painter = painterResource(spec.drawableResId),
+                            contentDescription = "Level ${spec.level}",
+                            modifier = Modifier.size(38.dp),
+                            contentScale = ContentScale.Fit
+                        )
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Lv.${spec.level} ${spec.title}",
+                                fontSize = 13.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = spec.subtitle,
+                                fontSize = 11.sp,
+                                color = Color(0xFF989EA9),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
 
                         Text(
                             text = if (isCurrent) "Aktif • $xpLabel" else if (isUnlocked) "✓ $xpLabel" else xpLabel,
-                            fontSize = 11.5.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (isCurrent) Color.White else Color(0xFFB0B6C2)
+                            color = if (isCurrent) Color.White else Color(0xFFB0B6C2),
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 }
