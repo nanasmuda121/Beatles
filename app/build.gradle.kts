@@ -25,8 +25,8 @@ android {
         applicationId = "com.nanzbeatles.nanas"
         minSdk = 23
         targetSdk = 36
-        versionCode = 301
-        versionName = "3.0.1"
+        versionCode = 310
+        versionName = "3.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
