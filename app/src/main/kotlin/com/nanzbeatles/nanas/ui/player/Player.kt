@@ -1684,13 +1684,20 @@ fun BottomSheetPlayer(
                         }
 
                         // Direct Lyrics Provider Switcher Pill
-                        com.nanzbeatles.nanas.ui.component.LyricsProviderQuickPill(
-                            activeProviderName = currentLyrics?.provider,
-                            preferredProvider = preferredLyricsProvider,
-                            isSwitching = isSwitchingLyricsProvider,
-                            switchingToName = switchingLyricsProviderName,
-                            onClick = { showLyricsProviderDialog = true }
-                        )
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            com.nanzbeatles.nanas.ui.component.LyricsProviderQuickPill(
+                                activeProviderName = currentLyrics?.provider,
+                                preferredProvider = preferredLyricsProvider,
+                                isSwitching = isSwitchingLyricsProvider,
+                                switchingToName = switchingLyricsProviderName,
+                                onClick = { showLyricsProviderDialog = true }
+                            )
+                        }
 
                         // Sync [-][+] Pill
                         Row(
@@ -2178,22 +2185,22 @@ fun BottomSheetPlayer(
 
                                             // Card Footer: Sync [-][+] Pill on Left | Provider Switcher in Center | "Lirik Penuh" Pill on Right
                                             Row(
-                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 modifier = Modifier
                                                     .fillMaxWidth()
                                                     .height(54.dp)
-                                                    .padding(horizontal = 12.dp)
+                                                    .padding(horizontal = 10.dp)
                                             ) {
                                                 // Sync [-][+] Pill (steps backward/forward by 1 lyric line)
                                                 Row(
                                                     verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                                                     modifier = Modifier
                                                         .clip(cardPillShape)
                                                         .background(cardFgColor.copy(alpha = 0.06f))
                                                         .border(1.dp, cardFgColor.copy(alpha = 0.16f), cardPillShape)
-                                                        .padding(start = 10.dp, end = 5.dp, top = 4.dp, bottom = 4.dp)
+                                                        .padding(start = 8.dp, end = 4.dp, top = 3.dp, bottom = 3.dp)
                                                 ) {
                                                     Text(
                                                         text = "Sync",
@@ -2212,7 +2219,7 @@ fun BottomSheetPlayer(
                                                     )
                                                     Box(
                                                         modifier = Modifier
-                                                            .size(24.dp)
+                                                            .size(22.dp)
                                                             .clip(cardBtnShape)
                                                             .background(cardFgColor.copy(alpha = 0.12f))
                                                             .clickable { stepLyricsByLine(-1) },
@@ -2227,7 +2234,7 @@ fun BottomSheetPlayer(
                                                     }
                                                     Box(
                                                         modifier = Modifier
-                                                            .size(24.dp)
+                                                            .size(22.dp)
                                                             .clip(cardBtnShape)
                                                             .background(cardFgColor.copy(alpha = 0.12f))
                                                             .clickable { stepLyricsByLine(1) },
@@ -2242,26 +2249,37 @@ fun BottomSheetPlayer(
                                                     }
                                                 }
 
-                                                // Direct Lyrics Provider Switcher Pill
-                                                com.nanzbeatles.nanas.ui.component.LyricsProviderQuickPill(
-                                                    activeProviderName = currentLyrics?.provider,
-                                                    preferredProvider = preferredLyricsProvider,
-                                                    isSwitching = isSwitchingLyricsProvider,
-                                                    switchingToName = switchingLyricsProviderName,
-                                                    onClick = { showLyricsProviderDialog = true },
-                                                    modifier = Modifier.weight(1f, fill = false).padding(horizontal = 4.dp)
-                                                )
+                                                // Direct Lyrics Provider Switcher Pill (flexible center space, never overlaps neighbors)
+                                                Box(
+                                                    modifier = Modifier.weight(1f),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    com.nanzbeatles.nanas.ui.component.LyricsProviderQuickPill(
+                                                        activeProviderName = currentLyrics?.provider,
+                                                        preferredProvider = preferredLyricsProvider,
+                                                        isSwitching = isSwitchingLyricsProvider,
+                                                        switchingToName = switchingLyricsProviderName,
+                                                        onClick = { showLyricsProviderDialog = true }
+                                                    )
+                                                }
 
                                                 // "Lirik Penuh" Pill Button
-                                                Box(
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                                                     modifier = Modifier
                                                         .clip(cardPillShape)
                                                         .background(cardFgColor.copy(alpha = 0.08f))
                                                         .border(1.dp, cardFgColor.copy(alpha = 0.18f), cardPillShape)
                                                         .clickable { isFullScreen = true }
-                                                        .padding(horizontal = 12.dp, vertical = 7.dp),
-                                                    contentAlignment = Alignment.Center
+                                                        .padding(horizontal = 9.dp, vertical = 6.dp)
                                                 ) {
+                                                    Icon(
+                                                        painter = painterResource(R.drawable.fullscreen),
+                                                        contentDescription = "Lirik Penuh",
+                                                        tint = cardFgColor,
+                                                        modifier = Modifier.size(14.dp)
+                                                    )
                                                     Text(
                                                         text = "Lirik Penuh",
                                                         fontSize = 11.sp,
