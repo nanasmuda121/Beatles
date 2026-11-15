@@ -245,8 +245,8 @@ fun StreakFlameIcon(
         val cy = h * 0.54f
         val widthFactor = animThicknessScale
 
-        // Pulsing colorful aura glow behind the flame
-        val glowRadius = w * (0.58f * glowPulse + 0.22f * surgeWave) * widthFactor
+        // Pulsing colorful aura glow behind the flame (well-bounded within icon)
+        val glowRadius = (w * (0.42f * glowPulse + 0.12f * surgeWave) * (1.0f + (widthFactor - 1.0f) * 0.20f)).coerceAtMost(w * 0.60f)
         val activeGlowAlpha = ((tierGlowIntensity * glowPulse) + 0.30f * surgeWave).coerceIn(0.08f, 0.92f)
         drawCircle(
             brush = Brush.radialGradient(
@@ -273,8 +273,8 @@ fun StreakFlameIcon(
             for (i in 0 until emberCount) {
                 val offsetSeed = i.toFloat() / emberCount.toFloat()
                 val p = (emberPhase + offsetSeed) % 1f
-                // Embers start around mid-flame (y = 0.68h) and float up past the tip (y = 0.02h)
-                val emberY = h * (0.68f - p * 0.66f)
+                // Embers start around mid-flame (y = 0.72h) and float up nicely within flame body
+                val emberY = h * (0.72f - p * 0.58f)
                 val horizontalSpread = sin((p * 2.2f + i * 1.3f) * PI.toFloat()) * w * 0.14f * widthFactor
                 val baseSpread = ((i % 5) - 2) * w * 0.055f * (1f - p * 0.4f)
                 val emberX = cx + baseSpread + horizontalSpread
@@ -330,9 +330,9 @@ fun StreakFlameIcon(
                 val seed = i.toFloat() / sparkCount.toFloat()
                 val angle = (seed * 2f * PI + bp * 2.4f * (if (i % 2 == 0) 1f else -1f)).toFloat()
                 val radialDist = w * (0.14f + 0.56f * bp * (0.65f + 0.35f * sin(i * 1.7f)))
-                val riseOffset = h * (0.38f * bp * (0.5f + 0.5f * ((i % 4) / 3f)))
-                val sx = cx + cos(angle) * radialDist * 0.85f
-                val sy = (cy + h * 0.12f) + sin(angle) * radialDist * 0.45f - riseOffset
+                val riseOffset = h * (0.24f * bp * (0.4f + 0.4f * ((i % 4) / 3f)))
+                val sx = (cx + cos(angle) * radialDist * 0.75f).coerceIn(w * 0.04f, w * 0.96f)
+                val sy = ((cy + h * 0.08f) + sin(angle) * radialDist * 0.35f - riseOffset).coerceIn(h * 0.04f, h * 0.96f)
                 val sparkRadius = w * (0.042f * (1f - bp * 0.7f)) * (if (i % 3 == 0) 1.25f else 0.85f)
                 val sparkColor = when (i % 3) {
                     0 -> animCoreColor
@@ -348,12 +348,13 @@ fun StreakFlameIcon(
         }
 
         val scaleSurgeX = 1f + surgeWave * 0.28f
-        val scaleSurgeY = 1f + surgeWave * 0.36f
+        val scaleSurgeY = 1f + surgeWave * 0.12f
+        val flameHeightScale = (1.0f + (widthFactor - 1.0f) * 0.15f) * (1.0f + (flicker - 1.0f) * 0.45f) * scaleSurgeY
 
         withTransform({
             scale(
                 scaleX = widthFactor * (1.0f + (flicker - 1.0f) * 0.65f) * scaleSurgeX,
-                scaleY = widthFactor * flicker * scaleSurgeY,
+                scaleY = flameHeightScale,
                 pivot = Offset(cx, h * 0.86f)
             )
             rotate(degrees = sway + burstWobble, pivot = Offset(cx, h * 0.84f))

@@ -85,6 +85,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -941,14 +942,14 @@ fun ProfileScreen(
                                     brush = Brush.radialGradient(
                                         colors = listOf(
                                             activeFlameVisual.glowColor.copy(
-                                                alpha = if (effectiveStreakDays > 0) 0.22f else 0.06f
+                                                alpha = if (effectiveStreakDays > 0) 0.16f else 0.04f
                                             ),
                                             Color.Transparent
                                         ),
                                         center = Offset(size.width * 0.28f, size.height * 0.35f),
-                                        radius = size.width * 0.72f
+                                        radius = (size.width * 0.48f).coerceAtMost(size.height * 0.65f)
                                     ),
-                                    radius = size.width * 0.72f,
+                                    radius = (size.width * 0.48f).coerceAtMost(size.height * 0.65f),
                                     center = Offset(size.width * 0.28f, size.height * 0.35f)
                                 )
                             }
@@ -964,12 +965,19 @@ fun ProfileScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(5.dp)
                             ) {
-                                StreakFlameIcon(
-                                    flame = activeFlameVisual,
-                                    size = 30.dp,
-                                    animated = true,
-                                    animationTriggerToken = streakState.animationTriggerToken
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(26.dp)
+                                        .clipToBounds(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    StreakFlameIcon(
+                                        flame = activeFlameVisual,
+                                        size = 24.dp,
+                                        animated = true,
+                                        animationTriggerToken = streakState.animationTriggerToken
+                                    )
+                                }
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = "Streak",

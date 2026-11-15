@@ -14,7 +14,6 @@ import android.graphics.Canvas
 import android.graphics.Color as AndroidColor
 import android.graphics.LinearGradient
 import android.graphics.Matrix
-import android.graphics.Movie
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RadialGradient
@@ -51,7 +50,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -59,7 +57,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -82,7 +79,6 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
 import com.nanzbeatles.nanas.R
-import com.nanzbeatles.nanas.streak.LevelGifManager
 import com.nanzbeatles.nanas.streak.MusicJourneyState
 import com.nanzbeatles.nanas.streak.StreakState
 import com.nanzbeatles.nanas.streak.StreakTier
@@ -122,10 +118,6 @@ fun ProfileShareCanvasDialog(
     val coroutineScope = rememberCoroutineScope()
     var renderedBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var isRendering by remember { mutableStateOf(true) }
-
-    var isLiveRendering by remember { mutableStateOf(false) }
-    var liveProgress by remember { mutableFloatStateOf(0f) }
-    var liveStatusText by remember { mutableStateOf("") }
 
     LaunchedEffect(data) {
         isRendering = true
@@ -190,7 +182,7 @@ fun ProfileShareCanvasDialog(
                             .padding(end = 12.dp)
                     ) {
                         Text(
-                            text = "Bagikan Statistik Musik",
+                            text = "Bagikan Canvas Statistik Musik",
                             fontSize = 17.5.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = Color.White,
@@ -198,7 +190,7 @@ fun ProfileShareCanvasDialog(
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = "Pratinjau kartu live resolusi tinggi siap dibagikan",
+                            text = "Pratinjau gambar resolusi tinggi siap dibagikan",
                             fontSize = 11.5.sp,
                             color = Color(0xFF9EA4B0),
                             maxLines = 1,
@@ -225,7 +217,7 @@ fun ProfileShareCanvasDialog(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Canvas Image Preview Box with LIVE badge overlay
+                // Canvas Image Preview Box
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -259,121 +251,55 @@ fun ProfileShareCanvasDialog(
                             contentScale = ContentScale.Fit,
                             modifier = Modifier.fillMaxSize()
                         )
-
-                        // Floating Live Badge
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xCC0D0F14),
-                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(10.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(7.dp)
-                                        .clip(CircleShape)
-                                        .background(Color(0xFFFF334B))
-                                )
-                                Text(
-                                    text = "FOTO LIVE",
-                                    color = Color.White,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    letterSpacing = 0.5.sp
-                                )
-                            }
-                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
-                // Progress Bar while generating Live Video / Motion Photo
-                if (isLiveRendering) {
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 10.dp),
-                        shape = RoundedCornerShape(14.dp),
-                        color = Color(0xFF141720),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f))
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = liveStatusText,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color.White
-                                )
-                                Text(
-                                    text = "${(liveProgress * 100).toInt()}%",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFFCBD5E1)
-                                )
-                            }
-                            LinearProgressIndicator(
-                                progress = { liveProgress },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(5.dp)
-                                    .clip(RoundedCornerShape(3.dp)),
-                                color = Color.White,
-                                trackColor = Color.White.copy(alpha = 0.14f)
-                            )
-                        }
-                    }
-                }
-
-                // Action Buttons
-                Column(
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // Primary: Bagikan Foto Live / Story (MP4)
+                    OutlinedButton(
+                        onClick = {
+                            val formatter = DateTimeFormatter.ofPattern("yyyyMMdd_HHmm")
+                            savePngLauncher.launch(
+                                "Beatles_Profile_Stats_${LocalDateTime.now().format(formatter)}.png"
+                            )
+                        },
+                        enabled = renderedBitmap != null,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("share_canvas_download_button"),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.28f))
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.download),
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(17.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Simpan PNG",
+                            color = Color.White,
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
                     Button(
                         onClick = {
-                            if (isLiveRendering) return@Button
+                            val bmp = renderedBitmap ?: return@Button
                             coroutineScope.launch {
-                                isLiveRendering = true
-                                liveStatusText = "Mempersiapkan animasi..."
-                                liveProgress = 0.05f
-                                val videoFile = ProfileLiveCardEncoder.encodeLiveCardVideo(
-                                    context = context,
-                                    data = data,
-                                    onProgress = { prog ->
-                                        liveProgress = prog
-                                        liveStatusText = "Merender video live... ${(prog * 100).toInt()}%"
-                                    }
-                                )
-                                isLiveRendering = false
-                                if (videoFile != null && videoFile.exists()) {
-                                    ProfileLiveCardEncoder.shareLiveVideo(context, videoFile, data)
-                                } else {
-                                    Toast.makeText(context, "Gagal membuat video live card", Toast.LENGTH_SHORT).show()
-                                }
+                                ProfileShareCanvasRenderer.shareBitmapImage(context, bmp, data)
                             }
                         },
-                        enabled = renderedBitmap != null && !isLiveRendering,
+                        enabled = renderedBitmap != null,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("share_canvas_live_video_button"),
+                            .weight(1f)
+                            .testTag("share_canvas_send_button"),
                         shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = Color.White,
@@ -386,116 +312,12 @@ fun ProfileShareCanvasDialog(
                             tint = Color.Black,
                             modifier = Modifier.size(17.dp)
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "Bagikan Foto Live / Story (MP4)",
-                            fontSize = 13.sp,
+                            text = "Bagikan Gambar",
+                            fontSize = 12.5.sp,
                             fontWeight = FontWeight.ExtraBold
                         )
-                    }
-
-                    // Secondary Row: Simpan Live Photo (.jpg) + Simpan PNG Biasa
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = {
-                                if (isLiveRendering) return@OutlinedButton
-                                coroutineScope.launch {
-                                    isLiveRendering = true
-                                    liveStatusText = "Merender Motion Photo..."
-                                    liveProgress = 0.1f
-                                    val videoFile = ProfileLiveCardEncoder.encodeLiveCardVideo(
-                                        context = context,
-                                        data = data,
-                                        onProgress = { prog ->
-                                            liveProgress = prog
-                                            liveStatusText = "Merender frame live... ${(prog * 100).toInt()}%"
-                                        }
-                                    )
-                                    if (videoFile != null && videoFile.exists()) {
-                                        liveStatusText = "Menyimpan ke Galeri..."
-                                        val bmp = renderedBitmap ?: ProfileShareCanvasRenderer.renderBitmap(context, data)
-                                        val motionPhotoFile = ProfileLiveCardEncoder.createMotionPhoto(
-                                            context = context,
-                                            coverBitmap = bmp,
-                                            mp4File = videoFile
-                                        )
-                                        isLiveRendering = false
-                                        if (motionPhotoFile != null && motionPhotoFile.exists()) {
-                                            val saved = ProfileLiveCardEncoder.saveFileToGallery(
-                                                context = context,
-                                                file = motionPhotoFile,
-                                                mimeType = "image/jpeg",
-                                                displayName = "Beatles_LivePhoto_${System.currentTimeMillis()}.jpg"
-                                            )
-                                            Toast.makeText(
-                                                context,
-                                                if (saved) "Live Photo (.jpg) berhasil disimpan ke Galeri!" else "Gagal menyimpan ke galeri",
-                                                Toast.LENGTH_LONG
-                                            ).show()
-                                        } else {
-                                            Toast.makeText(context, "Gagal memproses Live Photo", Toast.LENGTH_SHORT).show()
-                                        }
-                                    } else {
-                                        isLiveRendering = false
-                                        Toast.makeText(context, "Gagal merender video live", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            },
-                            enabled = renderedBitmap != null && !isLiveRendering,
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("share_canvas_motion_photo_button"),
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.28f))
-                        ) {
-                            Icon(
-                                painter = painterResource(R.drawable.download),
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "Live Photo (.jpg)",
-                                color = Color.White,
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1
-                            )
-                        }
-
-                        OutlinedButton(
-                            onClick = {
-                                val formatter = DateTimeFormatter.ofPattern("yyyyMMdd_HHmm")
-                                savePngLauncher.launch(
-                                    "Beatles_Profile_Stats_${LocalDateTime.now().format(formatter)}.png"
-                                )
-                            },
-                            enabled = renderedBitmap != null && !isLiveRendering,
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("share_canvas_download_button"),
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.28f))
-                        ) {
-                            Icon(
-                                painter = painterResource(R.drawable.download),
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "Foto Biasa (PNG)",
-                                color = Color.White,
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1
-                            )
-                        }
                     }
                 }
             }
@@ -559,17 +381,9 @@ object ProfileShareCanvasRenderer {
     fun renderBitmap(
         context: Context,
         data: ProfileShareCanvasData,
-        timeMs: Long = 0L,
-        targetW: Int = CANVAS_W,
-        targetH: Int = CANVAS_H,
     ): Bitmap {
-        val bmp = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
+        val bmp = Bitmap.createBitmap(CANVAS_W, CANVAS_H, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
-        if (targetW != CANVAS_W || targetH != CANVAS_H) {
-            val sx = targetW.toFloat() / CANVAS_W.toFloat()
-            val sy = targetH.toFloat() / CANVAS_H.toFloat()
-            canvas.scale(sx, sy)
-        }
 
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         val textPaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -626,11 +440,7 @@ object ProfileShareCanvasRenderer {
         canvas.drawText("Profil", padX + 74f, curY + 47f, textPaint)
 
         // Date & Brand Pill on Top Right
-        val dateStr = if (timeMs > 0L) {
-            "● LIVE • ${LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd MMM", Locale("id", "ID")))}"
-        } else {
-            LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd MMM yyyy • HH:mm", Locale("id", "ID")))
-        }
+        val dateStr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd MMM yyyy • HH:mm", Locale("id", "ID")))
         textPaint.typeface = mediumTypeface
         textPaint.textSize = 23f
         val dateW = textPaint.measureText(dateStr)
@@ -640,11 +450,11 @@ object ProfileShareCanvasRenderer {
         canvas.drawRoundRect(pillRect, 26f, 26f, paint)
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = 2f
-        paint.color = if (timeMs > 0L) AndroidColor.argb(90, 255, 51, 75) else AndroidColor.argb(38, 255, 255, 255)
+        paint.color = AndroidColor.argb(38, 255, 255, 255)
         canvas.drawRoundRect(pillRect, 26f, 26f, paint)
         paint.style = Paint.Style.FILL
 
-        textPaint.color = if (timeMs > 0L) AndroidColor.parseColor("#FF6B7D") else AndroidColor.parseColor("#CBD5E1")
+        textPaint.color = AndroidColor.parseColor("#CBD5E1")
         canvas.drawText(dateStr, pillRect.left + 22f, curY + 40f, textPaint)
 
         curY += 86f
@@ -663,7 +473,7 @@ object ProfileShareCanvasRenderer {
         }
         canvas.clipPath(bannerClipPath)
 
-        val bannerBmp = loadBannerBitmap(context, data.bannerUri, data.bannerIsVideo, timeMs * 1000L)
+        val bannerBmp = loadBannerBitmap(context, data.bannerUri, data.bannerIsVideo)
         if (bannerBmp != null) {
             drawCenterCropBitmap(canvas, bannerBmp, bannerRect)
             // Dark scrim for legibility
@@ -806,73 +616,36 @@ object ProfileShareCanvasRenderer {
         val levelRect = RectF(padX, curY, CANVAS_W - padX, curY + levelCardH)
         drawCardContainer(canvas, levelRect, 38f)
 
-        // Soft radial highlight behind emblem (dynamic pulse when timeMs > 0)
-        val auraPulse = if (timeMs > 0L) 170f + 24f * sin(timeMs * 0.006f) else 170f
-        val auraAlpha = if (timeMs > 0L) (34 + 16 * sin(timeMs * 0.006f)).toInt().coerceIn(15, 60) else 30
+        // Soft radial highlight behind emblem
         paint.shader = RadialGradient(
-            levelRect.left + 125f, levelRect.centerY(), auraPulse,
-            AndroidColor.argb(auraAlpha, 255, 255, 255),
+            levelRect.left + 125f, levelRect.centerY(), 170f,
+            AndroidColor.argb(30, 255, 255, 255),
             AndroidColor.TRANSPARENT,
             Shader.TileMode.CLAMP
         )
-        canvas.drawCircle(levelRect.left + 125f, levelRect.centerY(), auraPulse, paint)
+        canvas.drawCircle(levelRect.left + 125f, levelRect.centerY(), 170f, paint)
         paint.shader = null
 
-        val iconDst = RectF(
-            levelRect.left + 48f,
-            levelRect.centerY() - 70f,
-            levelRect.left + 188f,
-            levelRect.centerY() + 70f
-        )
-
-        var drewEmblem = false
-        if (timeMs > 0L) {
-            val loopGif = LevelGifManager.getLoopGifFile(context, levelSpec.level, ignoreEnabled = true)
-            if (loopGif != null && loopGif.exists()) {
-                @Suppress("DEPRECATION")
-                val movie = runCatching { Movie.decodeFile(loopGif.absolutePath) }.getOrNull()
-                if (movie != null && movie.duration() > 0) {
-                    movie.setTime((timeMs % movie.duration()).toInt())
-                    val mw = movie.width().toFloat().coerceAtLeast(1f)
-                    val mh = movie.height().toFloat().coerceAtLeast(1f)
-                    val iconScale = 140f / maxOf(mw, mh)
-                    canvas.save()
-                    canvas.translate(
-                        iconDst.centerX() - (mw * iconScale) / 2f,
-                        iconDst.centerY() - (mh * iconScale) / 2f
-                    )
-                    canvas.scale(iconScale, iconScale)
-                    movie.draw(canvas, 0f, 0f)
-                    canvas.restore()
-                    drewEmblem = true
-                }
-            }
+        val levelIconBmp: Bitmap? = try {
+            BitmapFactory.decodeResource(context.resources, levelSpec.drawableResId)
+        } catch (_: Throwable) {
+            null
         }
-
-        if (!drewEmblem) {
-            val levelIconBmp: Bitmap? = try {
-                BitmapFactory.decodeResource(context.resources, levelSpec.drawableResId)
-            } catch (_: Throwable) {
-                null
-            }
-            if (levelIconBmp != null) {
-                if (timeMs > 0L) {
-                    val breatheScale = 1f + 0.035f * sin(timeMs * 0.005f)
-                    canvas.save()
-                    canvas.scale(breatheScale, breatheScale, iconDst.centerX(), iconDst.centerY())
-                    canvas.drawBitmap(levelIconBmp, null, iconDst, null)
-                    canvas.restore()
-                } else {
-                    canvas.drawBitmap(levelIconBmp, null, iconDst, null)
-                }
-            } else {
-                drawWingedHexHeadphoneEmblem(
-                    canvas = canvas,
-                    cx = levelRect.left + 118f,
-                    cy = levelRect.centerY(),
-                    size = 152f
-                )
-            }
+        if (levelIconBmp != null) {
+            val iconDst = RectF(
+                levelRect.left + 48f,
+                levelRect.centerY() - 70f,
+                levelRect.left + 188f,
+                levelRect.centerY() + 70f
+            )
+            canvas.drawBitmap(levelIconBmp, null, iconDst, null)
+        } else {
+            drawWingedHexHeadphoneEmblem(
+                canvas = canvas,
+                cx = levelRect.left + 118f,
+                cy = levelRect.centerY(),
+                size = 152f
+            )
         }
 
         val lvTextX = levelRect.left + 226f
@@ -925,22 +698,6 @@ object ProfileShareCanvasRenderer {
             )
             canvas.drawRoundRect(fillRect, 12f, 12f, paint)
             paint.shader = null
-
-            // Moving specular shimmer highlight across the progress bar when timeMs > 0
-            if (timeMs > 0L) {
-                val cyclePos = ((timeMs % 2200L) / 2200f) * (barRect.width() + 100f) - 50f
-                val shimmerX = barRect.left + cyclePos
-                if (shimmerX in barRect.left..fillRect.right) {
-                    paint.shader = LinearGradient(
-                        shimmerX - 35f, barRect.top, shimmerX + 35f, barRect.bottom,
-                        intArrayOf(AndroidColor.TRANSPARENT, AndroidColor.argb(170, 255, 255, 255), AndroidColor.TRANSPARENT),
-                        null,
-                        Shader.TileMode.CLAMP
-                    )
-                    canvas.drawRoundRect(fillRect, 12f, 12f, paint)
-                    paint.shader = null
-                }
-            }
         }
 
         textPaint.color = AndroidColor.WHITE
@@ -1151,8 +908,7 @@ object ProfileShareCanvasRenderer {
             top = summaryRect.top + 220f,
             width = summaryRect.width() - 76f,
             height = 68f,
-            isActive = totalSec > 0L,
-            timeMs = timeMs
+            isActive = totalSec > 0L
         )
 
         // 7-Day Weekly Pattern Mini Bar Graph (Sen .. Min) at bottom of Summary Card
@@ -1318,24 +1074,6 @@ object ProfileShareCanvasRenderer {
                 val pbW = textPaint.measureText(playBadge)
                 canvas.drawText(playBadge, rowRect.right - 26f - pbW, rowRect.centerY() + 8f, textPaint)
 
-                // Mini animated equalizer bars when timeMs > 0
-                if (timeMs > 0L) {
-                    val eqBaseX = rowRect.right - 36f - pbW - 32f
-                    val eqBaseY = rowRect.centerY() + 7f
-                    val barW = 3.5f
-                    val barGap = 2.5f
-                    val maxH = 18f
-                    for (b in 0..3) {
-                        val phase = (timeMs * 0.0075f) + (idx * 1.4f) + (b * 0.85f)
-                        val bh = (maxH * (0.25f + 0.75f * kotlin.math.abs(sin(phase)))).coerceIn(4f, maxH)
-                        paint.color = AndroidColor.argb(210, 255, 255, 255)
-                        canvas.drawRoundRect(
-                            RectF(eqBaseX + b * (barW + barGap), eqBaseY - bh, eqBaseX + b * (barW + barGap) + barW, eqBaseY),
-                            2f, 2f, paint
-                        )
-                    }
-                }
-
                 rowY += rowH + 10f
             }
         }
@@ -1440,7 +1178,7 @@ object ProfileShareCanvasRenderer {
         }.getOrNull()
     }
 
-    private fun loadBannerBitmap(context: Context, uriString: String, isVideo: Boolean, timeUs: Long = 0L): Bitmap? {
+    private fun loadBannerBitmap(context: Context, uriString: String, isVideo: Boolean): Bitmap? {
         if (uriString.isBlank()) return null
         if (!isVideo) {
             return loadImageBitmap(context, uriString, 1080)
@@ -1454,8 +1192,7 @@ object ProfileShareCanvasRenderer {
                 } else {
                     retriever.setDataSource(context, cleanUri)
                 }
-                retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST)
-                    ?: retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                     ?: retriever.frameAtTime
             } finally {
                 runCatching { retriever.release() }
@@ -1729,7 +1466,6 @@ object ProfileShareCanvasRenderer {
         width: Float,
         height: Float,
         isActive: Boolean,
-        timeMs: Long = 0L,
     ) {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
@@ -1745,11 +1481,7 @@ object ProfileShareCanvasRenderer {
                 val env1 = exp(-((norm - 0.18f) * (norm - 0.18f)) / 0.012f)
                 val env2 = exp(-((norm - 0.50f) * (norm - 0.50f)) / 0.016f)
                 val env3 = exp(-((norm - 0.82f) * (norm - 0.82f)) / 0.014f)
-                val ripple = if (timeMs > 0L) {
-                    0.5f + 0.5f * sin(i * 1.35f + timeMs * 0.0075f)
-                } else {
-                    0.5f + 0.5f * sin(i * 1.35f)
-                }
+                val ripple = 0.5f + 0.5f * sin(i * 1.35f)
                 (0.18f + (env1 * 0.55f + env2 * 0.82f + env3 * 0.65f) * (0.45f + 0.55f * ripple))
                     .coerceIn(0.16f, 0.98f)
             } else {
