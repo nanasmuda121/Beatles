@@ -1276,7 +1276,7 @@ fun BottomSheetPlayer(
 
             Spacer(Modifier.height(6.dp))
 
-            // 3b. Gaya Suara (Normal / Speed Up / Slowed + Reverb)
+            // 3b. Gaya Suara (Normal / Sped up / Slowed + reverb / Super slowed / Nightcore / Lo-fi / 8D / Konser)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1287,7 +1287,8 @@ fun BottomSheetPlayer(
                         shape = RoundedCornerShape(24.dp),
                         isHighlighted = audioStyleMode != AudioStyleMode.NORMAL
                     )
-                    .padding(horizontal = 5.dp, vertical = 4.dp)
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 6.dp, vertical = 4.dp)
             ) {
                 AudioStyleMode.entries.forEach { mode ->
                     val isSelectedMode = audioStyleMode == mode
@@ -1298,7 +1299,6 @@ fun BottomSheetPlayer(
                     }
                     Box(
                         modifier = Modifier
-                            .weight(1f)
                             .clip(RoundedCornerShape(18.dp))
                             .crystalLiquidGlassPill(
                                 isSelected = isSelectedMode,
@@ -1307,7 +1307,7 @@ fun BottomSheetPlayer(
                             .clickable(enabled = !isListenTogetherGuest) {
                                 playerConnection.setAudioStyleMode(mode)
                             }
-                            .padding(horizontal = 8.dp, vertical = 7.dp),
+                            .padding(horizontal = 12.dp, vertical = 7.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Row(
@@ -1320,6 +1320,11 @@ fun BottomSheetPlayer(
                                         AudioStyleMode.NORMAL -> R.drawable.music_note
                                         AudioStyleMode.SPEED_UP -> R.drawable.speed
                                         AudioStyleMode.SLOWED_REVERB -> R.drawable.graphic_eq
+                                        AudioStyleMode.SUPER_SLOWED -> R.drawable.graphic_eq
+                                        AudioStyleMode.NIGHTCORE -> R.drawable.speed
+                                        AudioStyleMode.LOFI -> R.drawable.equalizer
+                                        AudioStyleMode.EIGHT_D -> R.drawable.graphic_eq
+                                        AudioStyleMode.CONCERT -> R.drawable.equalizer
                                     }
                                 ),
                                 contentDescription = mode.label,

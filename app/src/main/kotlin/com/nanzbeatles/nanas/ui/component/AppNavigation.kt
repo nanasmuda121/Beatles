@@ -554,38 +554,49 @@ fun AppNavigationBar(
                         val barCorner = CornerRadius(barH / 2f, barH / 2f)
                         val exp = lensExpansionProgress.coerceIn(0f, 1f)
                         val speedMag = abs(animatedVelocityNorm).coerceIn(0f, 1f)
+                        val velSign = when {
+                            animatedVelocityNorm > 0.04f -> 1f
+                            animatedVelocityNorm < -0.04f -> -1f
+                            else -> 0f
+                        }
 
-                        // Bubble dimensions with surface-tension velocity stretch:
-                        val restW = (slotW - 8.dp.toPx()).coerceAtLeast(62.dp.toPx())
-                        val expandedW = (slotW + 16.dp.toPx()).coerceAtMost(usableW * 0.52f)
-                        val velocityStretchW = 14.dp.toPx() * speedMag * exp
+                        // Liquid Glass V2 Bubble Dimensions:
+                        // Rest state: snug pill hugging the selected tab inside the capsule (3.dp inset)
+                        // Expanded/Drag state (V2): swells into a wide, tall 3D water-lens capsule
+                        // that protrudes above & below the bar and stretches elastically with finger velocity
+                        val restW = (slotW - 6.dp.toPx()).coerceAtLeast(64.dp.toPx())
+                        val expandedW = (slotW + 26.dp.toPx()).coerceAtMost(usableW * 0.56f)
+                        val velocityStretchW = 16.dp.toPx() * speedMag * exp
                         val bubbleW = restW + (expandedW - restW) * exp + velocityStretchW
 
-                        val restH = (barH - 12.dp.toPx()).coerceAtLeast(42.dp.toPx())
-                        val expandedH = barH + 24.dp.toPx()
-                        val velocityCompressH = 4.dp.toPx() * speedMag * exp
+                        val restH = (barH - 6.dp.toPx()).coerceAtLeast(46.dp.toPx())
+                        val expandedH = barH + 22.dp.toPx()
+                        val velocityCompressH = 4.5.dp.toPx() * speedMag * exp
                         val bubbleH = (restH + (expandedH - restH) * exp - velocityCompressH).coerceAtLeast(restH)
 
-                        val slotCenterX = horizontalPadPx + slotW * (animatedIndex + 0.5f)
+                        val slotCenterX = horizontalPadPx + slotW * (animatedIndex + 0.5f) +
+                            (velSign * 3.5.dp.toPx() * speedMag * exp)
                         val bubbleLeft = (slotCenterX - bubbleW / 2f)
-                            .coerceIn(-4.dp.toPx() * exp, barW - bubbleW + 4.dp.toPx() * exp)
+                            .coerceIn(-6.dp.toPx() * exp, barW - bubbleW + 6.dp.toPx() * exp)
+                        val bubbleRight = bubbleLeft + bubbleW
+                        val bubbleCenterX = (bubbleLeft + bubbleRight) * 0.5f
                         val bubbleTop = (barH - bubbleH) / 2f
+                        val bubbleBottom = bubbleTop + bubbleH
                         val bubbleRadius = bubbleH / 2f
                         val bubbleCr = CornerRadius(bubbleRadius, bubbleRadius)
 
-                        val iceCyan = Color(0xFF7DD3FC)
-                        val skyCaustic = Color(0xFF38BDF8)
-                        val violetCaustic = Color(0xFFC4B5FD)
-                        val warmAmberCaustic = Color(0xFFFDBA74)
+                        val v2BlueAccent = Color(0xFF1E90FF)
+                        val v2ElectricBlue = Color(0xFF0077FF)
+                        val v2CyanCaustic = Color(0xFF00E5FF)
+                        val v2VioletFringe = Color(0xFF7C4DFF)
 
                         // =========================================================================
-                        // 1. ULTRA-CLEAR ("BENING") FLUID GLASS CAPSULE BAR (React Bits Style)
+                        // 1. LIQUID GLASS V2 CAPSULE TRACK (Smoked Translucent Glass + Silver Rim)
                         // =========================================================================
-                        // Center is nearly 100% see-through ("bening") so background content shines right through
                         val barBgColor = if (isDark) {
-                            Color(0xFF0A101D).copy(alpha = if (isGlass) 0.06f else 0.90f)
+                            Color(0xFF141820).copy(alpha = if (isGlass) 0.78f else 0.94f)
                         } else {
-                            Color.White.copy(alpha = if (isGlass) 0.10f else 0.92f)
+                            Color(0xFFF3F6FA).copy(alpha = if (isGlass) 0.82f else 0.95f)
                         }
                         drawRoundRect(
                             color = barBgColor,
@@ -594,91 +605,44 @@ fun AppNavigationBar(
                             cornerRadius = barCorner
                         )
 
-                        // Layer A: Thick Curved 3D Glass Torus / Meniscus Wall Depth Band (inset 2.8.dp)
-                        val bevelInset = 2.8.dp.toPx()
-                        val bevelStroke = 5.2.dp.toPx()
+                        // Subtle inner glass surface sheen across the capsule track
                         drawRoundRect(
                             brush = Brush.verticalGradient(
                                 colorStops = arrayOf(
-                                    0.00f to if (isDark) Color(0xFF020612).copy(alpha = 0.28f) else Color(0xFF334155).copy(alpha = 0.12f),
-                                    0.25f to if (isDark) Color(0xFF0F172A).copy(alpha = 0.16f) else Color.White.copy(alpha = 0.25f),
-                                    0.50f to if (isDark) Color(0xFF020612).copy(alpha = 0.22f) else Color(0xFF475569).copy(alpha = 0.10f),
-                                    0.75f to if (isDark) Color(0xFF0F172A).copy(alpha = 0.16f) else Color.White.copy(alpha = 0.25f),
-                                    1.00f to if (isDark) Color(0xFF020612).copy(alpha = 0.30f) else Color(0xFF334155).copy(alpha = 0.14f)
+                                    0.00f to Color.White.copy(alpha = if (isDark) 0.13f else 0.65f),
+                                    0.32f to Color.White.copy(alpha = if (isDark) 0.04f else 0.22f),
+                                    0.68f to Color.Black.copy(alpha = if (isDark) 0.18f else 0.03f),
+                                    1.00f to Color.White.copy(alpha = if (isDark) 0.07f else 0.35f)
                                 )
                             ),
-                            topLeft = Offset(bevelInset, bevelInset),
-                            size = Size((barW - bevelInset * 2f).coerceAtLeast(1f), (barH - bevelInset * 2f).coerceAtLeast(1f)),
-                            cornerRadius = CornerRadius((barH / 2f - bevelInset).coerceAtLeast(1f), (barH / 2f - bevelInset).coerceAtLeast(1f)),
-                            style = Stroke(width = bevelStroke)
+                            topLeft = Offset.Zero,
+                            size = Size(barW, barH),
+                            cornerRadius = barCorner
                         )
 
-                        // Layer B: Prismatic Caustic Meniscus Wave inside the curved glass wall (inset 4.2.dp)
-                        val causticInset = 4.2.dp.toPx()
-                        val causticStroke = 3.4.dp.toPx()
-                        val causticShift = (animatedIndex / (itemCount - 1).coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
-                        drawRoundRect(
-                            brush = Brush.linearGradient(
-                                colorStops = arrayOf(
-                                    0.00f to iceCyan.copy(alpha = if (isDark) 0.28f else 0.22f),
-                                    0.18f to Color.White.copy(alpha = if (isDark) 0.18f else 0.45f),
-                                    (0.32f + causticShift * 0.18f) to skyCaustic.copy(alpha = if (isDark) 0.32f else 0.24f),
-                                    (0.52f + causticShift * 0.14f) to warmAmberCaustic.copy(alpha = if (isDark) 0.22f else 0.18f),
-                                    0.78f to violetCaustic.copy(alpha = if (isDark) 0.24f else 0.18f),
-                                    1.00f to iceCyan.copy(alpha = if (isDark) 0.30f else 0.24f)
-                                ),
-                                start = Offset(0f, 0f),
-                                end = Offset(barW, barH)
-                            ),
-                            topLeft = Offset(causticInset, causticInset),
-                            size = Size((barW - causticInset * 2f).coerceAtLeast(1f), (barH - causticInset * 2f).coerceAtLeast(1f)),
-                            cornerRadius = CornerRadius((barH / 2f - causticInset).coerceAtLeast(1f), (barH / 2f - causticInset).coerceAtLeast(1f)),
-                            style = Stroke(width = causticStroke)
-                        )
-
-                        // Layer C: Signature Inner Concentric Meniscus Ridge (inset 7.2.dp — the double-ring lens look)
-                        val innerRidgeInset = 7.2.dp.toPx()
-                        val innerRidgeStroke = 1.7.dp.toPx()
-                        drawRoundRect(
-                            brush = Brush.verticalGradient(
-                                colorStops = arrayOf(
-                                    0.00f to Color.White.copy(alpha = if (isDark) 0.28f else 0.55f),
-                                    0.20f to iceCyan.copy(alpha = if (isDark) 0.18f else 0.20f),
-                                    0.50f to Color.White.copy(alpha = if (isDark) 0.10f else 0.25f),
-                                    0.80f to skyCaustic.copy(alpha = if (isDark) 0.18f else 0.20f),
-                                    1.00f to Color.White.copy(alpha = if (isDark) 0.25f else 0.50f)
-                                )
-                            ),
-                            topLeft = Offset(innerRidgeInset, innerRidgeInset),
-                            size = Size((barW - innerRidgeInset * 2f).coerceAtLeast(1f), (barH - innerRidgeInset * 2f).coerceAtLeast(1f)),
-                            cornerRadius = CornerRadius((barH / 2f - innerRidgeInset).coerceAtLeast(1f), (barH / 2f - innerRidgeInset).coerceAtLeast(1f)),
-                            style = Stroke(width = innerRidgeStroke)
-                        )
-
-                        // Layer D: Second Inner Whisper Caustic Ring (inset 10.4.dp) fading into the clear center
-                        val whisperInset = 10.4.dp.toPx()
+                        // Inner subtle concave track groove (inset 2.dp)
+                        val trackInset = 2.dp.toPx()
                         drawRoundRect(
                             brush = Brush.verticalGradient(
                                 colors = listOf(
-                                    Color.White.copy(alpha = if (isDark) 0.12f else 0.28f),
+                                    Color.Black.copy(alpha = if (isDark) 0.36f else 0.08f),
                                     Color.Transparent,
-                                    Color.White.copy(alpha = if (isDark) 0.10f else 0.24f)
+                                    Color.White.copy(alpha = if (isDark) 0.06f else 0.35f)
                                 )
                             ),
-                            topLeft = Offset(whisperInset, whisperInset),
-                            size = Size((barW - whisperInset * 2f).coerceAtLeast(1f), (barH - whisperInset * 2f).coerceAtLeast(1f)),
-                            cornerRadius = CornerRadius((barH / 2f - whisperInset).coerceAtLeast(1f), (barH / 2f - whisperInset).coerceAtLeast(1f)),
-                            style = Stroke(width = 1.dp.toPx())
+                            topLeft = Offset(trackInset, trackInset),
+                            size = Size((barW - trackInset * 2f).coerceAtLeast(1f), (barH - trackInset * 2f).coerceAtLeast(1f)),
+                            cornerRadius = CornerRadius((barH / 2f - trackInset).coerceAtLeast(1f), (barH / 2f - trackInset).coerceAtLeast(1f)),
+                            style = Stroke(width = 1.6.dp.toPx())
                         )
 
-                        // Layer E: Outer Crisp Specular Glass Border around the capsule perimeter
+                        // Crisp V2 metallic-glass outer border around the capsule bar
                         drawRoundRect(
                             brush = Brush.verticalGradient(
                                 colorStops = arrayOf(
-                                    0.00f to if (isDark) Color.White.copy(alpha = 0.52f) else Color.White.copy(alpha = 0.88f),
-                                    0.35f to if (isDark) Color.White.copy(alpha = 0.20f) else Color.Black.copy(alpha = 0.12f),
-                                    0.65f to if (isDark) Color.White.copy(alpha = 0.18f) else Color.Black.copy(alpha = 0.10f),
-                                    1.00f to if (isDark) Color.White.copy(alpha = 0.44f) else Color.White.copy(alpha = 0.78f)
+                                    0.00f to if (isDark) Color.White.copy(alpha = 0.44f) else Color.Black.copy(alpha = 0.16f),
+                                    0.45f to if (isDark) Color.White.copy(alpha = 0.18f) else Color.Black.copy(alpha = 0.08f),
+                                    1.00f to if (isDark) Color.White.copy(alpha = 0.32f) else Color.Black.copy(alpha = 0.14f)
                                 )
                             ),
                             topLeft = Offset.Zero,
@@ -687,52 +651,14 @@ fun AppNavigationBar(
                             style = Stroke(width = 1.25.dp.toPx())
                         )
 
-                        // Top & Bottom Curved Meniscus Specular Glints on the Base Capsule
-                        val baseGlintInset = (barH * 0.42f).coerceAtLeast(18.dp.toPx())
-                        if (barW > baseGlintInset * 2f) {
-                            drawLine(
-                                brush = Brush.horizontalGradient(
-                                    colorStops = arrayOf(
-                                        0.00f to Color.Transparent,
-                                        0.20f to Color.White.copy(alpha = if (isDark) 0.42f else 0.75f),
-                                        0.55f to iceCyan.copy(alpha = if (isDark) 0.38f else 0.45f),
-                                        0.80f to Color.White.copy(alpha = if (isDark) 0.46f else 0.75f),
-                                        1.00f to Color.Transparent
-                                    ),
-                                    startX = baseGlintInset,
-                                    endX = barW - baseGlintInset
-                                ),
-                                start = Offset(baseGlintInset, 1.4.dp.toPx()),
-                                end = Offset(barW - baseGlintInset, 1.4.dp.toPx()),
-                                strokeWidth = 1.2.dp.toPx(),
-                                cap = StrokeCap.Round
-                            )
-                            drawLine(
-                                brush = Brush.horizontalGradient(
-                                    colorStops = arrayOf(
-                                        0.00f to Color.Transparent,
-                                        0.25f to iceCyan.copy(alpha = if (isDark) 0.30f else 0.35f),
-                                        0.50f to Color.White.copy(alpha = if (isDark) 0.38f else 0.68f),
-                                        0.75f to warmAmberCaustic.copy(alpha = if (isDark) 0.26f else 0.30f),
-                                        1.00f to Color.Transparent
-                                    ),
-                                    startX = baseGlintInset,
-                                    endX = barW - baseGlintInset
-                                ),
-                                start = Offset(baseGlintInset, barH - 1.4.dp.toPx()),
-                                end = Offset(barW - baseGlintInset, barH - 1.4.dp.toPx()),
-                                strokeWidth = 1.1.dp.toPx(),
-                                cap = StrokeCap.Round
-                            )
-                        }
-
                         // =========================================================================
-                        // 2. CRYSTAL-CLEAR ("BENING") 3D ACTIVE FLUID LENS DROPLET
+                        // 2. LIQUID GLASS V2 3D WATER-LENS DROPLET & OPTICAL BARREL REFRACTION
                         // =========================================================================
-                        // Clear out any base meniscus lines inside the active lens when expanded
+                        // Punch out the base bar inside the expanded V2 water droplet so it becomes
+                        // crystal-clear ("bening") and shows the barrel-bent glass edges inside!
                         if (exp > 0.01f && isGlass) {
                             drawRoundRect(
-                                color = Color.Black.copy(alpha = 0.75f * exp),
+                                color = Color.Black.copy(alpha = 0.58f * exp),
                                 topLeft = Offset(bubbleLeft, bubbleTop),
                                 size = Size(bubbleW, bubbleH),
                                 cornerRadius = bubbleCr,
@@ -740,138 +666,211 @@ fun AppNavigationBar(
                             )
                         }
 
-                        // Ultra-transparent ("bening") droplet fill both at rest and when expanded!
-                        val bubbleFillColor = if (isDark) {
-                            Color.White.copy(alpha = 0.04f + 0.03f * exp)
-                        } else {
-                            Color.White.copy(alpha = 0.14f + 0.06f * exp)
-                        }
+                        // At rest (`exp = 0`): deep dark glossy pill inside the capsule (like V2 active pill)
+                        // While dragging/expanding (`exp -> 1`): crystal-clear liquid lens with subtle radial depth
+                        val restPillAlpha = if (isDark) 0.62f else 0.85f
+                        val expandedPillAlpha = if (isDark) 0.18f else 0.32f
+                        val currentFillAlpha = restPillAlpha + (expandedPillAlpha - restPillAlpha) * exp
+                        val pillBaseColor = if (isDark) Color(0xFF070A10) else Color.White
+
                         drawRoundRect(
-                            color = bubbleFillColor,
+                            color = pillBaseColor.copy(alpha = currentFillAlpha),
                             topLeft = Offset(bubbleLeft, bubbleTop),
                             size = Size(bubbleW, bubbleH),
                             cornerRadius = bubbleCr
                         )
 
-                        // Inner curved meniscus ring inside the active fluid droplet
-                        val dropletInnerInset = 3.2.dp.toPx()
-                        val dropletInnerStroke = (2.2f + 1.4f * exp).dp.toPx()
-                        drawRoundRect(
-                            brush = Brush.linearGradient(
-                                colorStops = arrayOf(
-                                    0.00f to cyanPrism.copy(alpha = 0.28f + 0.26f * exp),
-                                    0.25f to Color.White.copy(alpha = 0.16f + 0.18f * exp),
-                                    0.50f to Color.Transparent,
-                                    0.75f to Color.White.copy(alpha = 0.16f + 0.18f * exp),
-                                    1.00f to orangePrism.copy(alpha = 0.26f + 0.26f * exp)
-                                ),
-                                start = Offset(bubbleLeft, bubbleTop),
-                                end = Offset(bubbleLeft + bubbleW, bubbleTop + bubbleH)
-                            ),
-                            topLeft = Offset(bubbleLeft + dropletInnerInset, bubbleTop + dropletInnerInset),
-                            size = Size(
-                                (bubbleW - dropletInnerInset * 2f).coerceAtLeast(1f),
-                                (bubbleH - dropletInnerInset * 2f).coerceAtLeast(1f)
-                            ),
-                            cornerRadius = CornerRadius(
-                                (bubbleRadius - dropletInnerInset).coerceAtLeast(1f),
-                                (bubbleRadius - dropletInnerInset).coerceAtLeast(1f)
-                            ),
-                            style = Stroke(width = dropletInnerStroke)
-                        )
-
-                        if (exp > 0.06f) {
+                        // V2 Optical Barrel Refraction inside the active water droplet:
+                        // Notice in the V2 video how the top and bottom borders of the navbar appear
+                        // bent/pinched inward toward the center inside the floating water lens, with
+                        // glowing blue/cyan chromatic dispersion along the curved meniscus!
+                        if (exp > 0.03f) {
                             lensClipPath.reset()
                             lensClipPath.addRoundRect(
                                 RoundRect(
                                     left = bubbleLeft,
                                     top = bubbleTop,
-                                    right = bubbleLeft + bubbleW,
-                                    bottom = bubbleTop + bubbleH,
+                                    right = bubbleRight,
+                                    bottom = bubbleBottom,
                                     cornerRadius = bubbleCr
                                 )
                             )
                             clipPath(lensClipPath) {
-                                val refractInset = 2.5.dp.toPx() * exp
-                                val refractedTopY = refractInset
-                                val refractedBottomY = barH - refractInset
-
-                                drawLine(
-                                    brush = Brush.horizontalGradient(
+                                // Radial lens vignette (clear center, dense refractive glass wall at edges)
+                                drawRoundRect(
+                                    brush = Brush.radialGradient(
                                         colorStops = arrayOf(
-                                            0.0f to cyanPrism.copy(alpha = 0.42f * exp),
-                                            0.25f to Color.White.copy(alpha = 0.28f * exp),
-                                            0.50f to Color.White.copy(alpha = 0.16f * exp),
-                                            0.75f to Color.White.copy(alpha = 0.28f * exp),
-                                            1.0f to orangePrism.copy(alpha = 0.42f * exp)
+                                            0.00f to Color.Transparent,
+                                            0.58f to Color.Transparent,
+                                            0.84f to v2ElectricBlue.copy(alpha = (if (isDark) 0.14f else 0.10f) * exp),
+                                            1.00f to Color.White.copy(alpha = (if (isDark) 0.24f else 0.35f) * exp)
                                         ),
-                                        startX = bubbleLeft,
-                                        endX = bubbleLeft + bubbleW
+                                        center = Offset(bubbleCenterX, barH * 0.5f),
+                                        radius = (bubbleW * 0.54f).coerceAtLeast(10f)
                                     ),
-                                    start = Offset(bubbleLeft + 2.dp.toPx(), refractedTopY),
-                                    end = Offset(bubbleLeft + bubbleW - 2.dp.toPx(), refractedTopY),
-                                    strokeWidth = 1.1.dp.toPx()
+                                    topLeft = Offset(bubbleLeft, bubbleTop),
+                                    size = Size(bubbleW, bubbleH),
+                                    cornerRadius = bubbleCr
                                 )
 
-                                drawLine(
-                                    brush = Brush.horizontalGradient(
-                                        colorStops = arrayOf(
-                                            0.0f to cyanPrism.copy(alpha = 0.36f * exp),
-                                            0.25f to Color.White.copy(alpha = 0.22f * exp),
-                                            0.50f to Color.White.copy(alpha = 0.12f * exp),
-                                            0.75f to Color.White.copy(alpha = 0.22f * exp),
-                                            1.0f to orangePrism.copy(alpha = 0.36f * exp)
-                                        ),
-                                        startX = bubbleLeft,
-                                        endX = bubbleLeft + bubbleW
+                                // Barrel-warped top & bottom navbar border lines inside the water lens
+                                val maxBendPx = 8.5.dp.toPx() * exp
+                                val edgeStartX = bubbleLeft - 4.dp.toPx()
+                                val edgeEndX = bubbleRight + 4.dp.toPx()
+
+                                // Chromatic blue outer refracted arc (slightly deeper bend for prism dispersion)
+                                val topChromaPath = Path().apply {
+                                    moveTo(edgeStartX, 1.5.dp.toPx())
+                                    quadraticTo(
+                                        bubbleCenterX,
+                                        1.5.dp.toPx() + maxBendPx * 1.28f,
+                                        edgeEndX,
+                                        1.5.dp.toPx()
+                                    )
+                                }
+                                val bottomChromaPath = Path().apply {
+                                    moveTo(edgeStartX, barH - 1.5.dp.toPx())
+                                    quadraticTo(
+                                        bubbleCenterX,
+                                        barH - 1.5.dp.toPx() - maxBendPx * 1.28f,
+                                        edgeEndX,
+                                        barH - 1.5.dp.toPx()
+                                    )
+                                }
+                                val chromaEdgeBrush = Brush.horizontalGradient(
+                                    colorStops = arrayOf(
+                                        0.00f to v2CyanCaustic.copy(alpha = 0.65f * exp),
+                                        0.22f to v2BlueAccent.copy(alpha = 0.55f * exp),
+                                        0.50f to v2ElectricBlue.copy(alpha = 0.30f * exp),
+                                        0.78f to v2BlueAccent.copy(alpha = 0.55f * exp),
+                                        1.00f to v2VioletFringe.copy(alpha = 0.65f * exp)
                                     ),
-                                    start = Offset(bubbleLeft + 2.dp.toPx(), refractedBottomY),
-                                    end = Offset(bubbleLeft + bubbleW - 2.dp.toPx(), refractedBottomY),
-                                    strokeWidth = 1.1.dp.toPx()
+                                    startX = bubbleLeft,
+                                    endX = bubbleRight
+                                )
+                                drawPath(
+                                    path = topChromaPath,
+                                    brush = chromaEdgeBrush,
+                                    style = Stroke(width = 2.4.dp.toPx(), cap = StrokeCap.Round)
+                                )
+                                drawPath(
+                                    path = bottomChromaPath,
+                                    brush = chromaEdgeBrush,
+                                    style = Stroke(width = 2.4.dp.toPx(), cap = StrokeCap.Round)
+                                )
+
+                                // Crisp specular white refracted bar edges (primary barrel distortion line)
+                                val topRefractPath = Path().apply {
+                                    moveTo(edgeStartX, 0.8.dp.toPx())
+                                    quadraticTo(
+                                        bubbleCenterX,
+                                        0.8.dp.toPx() + maxBendPx,
+                                        edgeEndX,
+                                        0.8.dp.toPx()
+                                    )
+                                }
+                                val bottomRefractPath = Path().apply {
+                                    moveTo(edgeStartX, barH - 0.8.dp.toPx())
+                                    quadraticTo(
+                                        bubbleCenterX,
+                                        barH - 0.8.dp.toPx() - maxBendPx,
+                                        edgeEndX,
+                                        barH - 0.8.dp.toPx()
+                                    )
+                                }
+                                val whiteRefractBrush = Brush.horizontalGradient(
+                                    colorStops = arrayOf(
+                                        0.00f to Color.White.copy(alpha = 0.72f * exp),
+                                        0.20f to Color.White.copy(alpha = 0.45f * exp),
+                                        0.50f to Color.White.copy(alpha = 0.22f * exp),
+                                        0.80f to Color.White.copy(alpha = 0.45f * exp),
+                                        1.00f to Color.White.copy(alpha = 0.72f * exp)
+                                    ),
+                                    startX = bubbleLeft,
+                                    endX = bubbleRight
+                                )
+                                drawPath(
+                                    path = topRefractPath,
+                                    brush = whiteRefractBrush,
+                                    style = Stroke(width = 1.35.dp.toPx(), cap = StrokeCap.Round)
+                                )
+                                drawPath(
+                                    path = bottomRefractPath,
+                                    brush = whiteRefractBrush,
+                                    style = Stroke(width = 1.35.dp.toPx(), cap = StrokeCap.Round)
                                 )
                             }
                         }
 
                         // =========================================================================
-                        // 3. FOREGROUND TAB ICONS & LABELS
+                        // 3. FOREGROUND TAB ICONS & LABELS (WITH V2 CHROMATIC LENS REFRACTION)
                         // =========================================================================
                         drawContent()
 
                         // =========================================================================
-                        // 4. FRONT 3D LIQUID LENS SPECULAR DOME & CAUSTIC CRESCENT RIMS
+                        // 4. FRONT V2 3D LIQUID LENS MENISCUS RIM & SPECULAR CATCHLIGHTS
                         // =========================================================================
+                        // Soft 3D curved dome highlight over the active pill/droplet
                         drawRoundRect(
                             brush = Brush.verticalGradient(
                                 colorStops = arrayOf(
-                                    0.00f to Color.White.copy(alpha = 0.14f + 0.16f * exp),
-                                    0.22f to Color.White.copy(alpha = 0.02f + 0.03f * exp),
+                                    0.00f to Color.White.copy(alpha = 0.16f + 0.18f * exp),
+                                    0.20f to Color.White.copy(alpha = 0.03f + 0.04f * exp),
                                     0.50f to Color.Transparent,
-                                    0.82f to Color.White.copy(alpha = 0.02f + 0.03f * exp),
-                                    1.00f to Color.White.copy(alpha = 0.08f + 0.12f * exp)
+                                    0.80f to Color.White.copy(alpha = 0.02f + 0.04f * exp),
+                                    1.00f to Color.White.copy(alpha = 0.12f + 0.16f * exp)
                                 ),
                                 startY = bubbleTop,
-                                endY = bubbleTop + bubbleH
+                                endY = bubbleBottom
                             ),
                             topLeft = Offset(bubbleLeft, bubbleTop),
                             size = Size(bubbleW, bubbleH),
                             cornerRadius = bubbleCr
                         )
 
-                        val midRimColor = if (isDark) Color.White else Color(0xFF475569)
-                        val outerStrokeW = (1.15f + 0.95f * exp).dp.toPx()
+                        // Inner thick 3D liquid meniscus wall ring (inset 2.2.dp)
+                        val innerRimInset = 2.2.dp.toPx()
+                        val innerRimStroke = (1.6f + 1.8f * exp).dp.toPx()
+                        drawRoundRect(
+                            brush = Brush.linearGradient(
+                                colorStops = arrayOf(
+                                    0.00f to v2CyanCaustic.copy(alpha = 0.18f + 0.38f * exp),
+                                    0.22f to Color.White.copy(alpha = 0.14f + 0.24f * exp),
+                                    0.50f to Color.Transparent,
+                                    0.78f to Color.White.copy(alpha = 0.14f + 0.24f * exp),
+                                    1.00f to v2BlueAccent.copy(alpha = 0.20f + 0.40f * exp)
+                                ),
+                                start = Offset(bubbleLeft, bubbleTop),
+                                end = Offset(bubbleRight, bubbleBottom)
+                            ),
+                            topLeft = Offset(bubbleLeft + innerRimInset, bubbleTop + innerRimInset),
+                            size = Size(
+                                (bubbleW - innerRimInset * 2f).coerceAtLeast(1f),
+                                (bubbleH - innerRimInset * 2f).coerceAtLeast(1f)
+                            ),
+                            cornerRadius = CornerRadius(
+                                (bubbleRadius - innerRimInset).coerceAtLeast(1f),
+                                (bubbleRadius - innerRimInset).coerceAtLeast(1f)
+                            ),
+                            style = Stroke(width = innerRimStroke)
+                        )
+
+                        // Outer razor-sharp V2 glass droplet border (silver-white top/bottom + bright liquid rims on left/right)
+                        val rimBaseColor = if (isDark) Color.White else Color(0xFF334155)
+                        val outerStrokeW = (1.25f + 0.85f * exp).dp.toPx()
                         drawRoundRect(
                             brush = Brush.horizontalGradient(
                                 colorStops = arrayOf(
-                                    0.00f to cyanPrism.copy(alpha = 0.55f + 0.38f * exp),
-                                    0.16f to iceCyan.copy(alpha = 0.45f + 0.35f * exp),
-                                    0.32f to midRimColor.copy(alpha = 0.42f + 0.38f * exp),
-                                    0.50f to midRimColor.copy(alpha = 0.52f + 0.38f * exp),
-                                    0.68f to midRimColor.copy(alpha = 0.42f + 0.38f * exp),
-                                    0.84f to warmAmberCaustic.copy(alpha = 0.45f + 0.35f * exp),
-                                    1.00f to orangePrism.copy(alpha = 0.55f + 0.38f * exp)
+                                    0.00f to Color.White.copy(alpha = 0.62f + 0.34f * exp),
+                                    0.14f to v2CyanCaustic.copy(alpha = 0.30f + 0.42f * exp),
+                                    0.32f to rimBaseColor.copy(alpha = 0.38f + 0.36f * exp),
+                                    0.50f to rimBaseColor.copy(alpha = 0.52f + 0.38f * exp),
+                                    0.68f to rimBaseColor.copy(alpha = 0.38f + 0.36f * exp),
+                                    0.86f to v2BlueAccent.copy(alpha = 0.30f + 0.42f * exp),
+                                    1.00f to Color.White.copy(alpha = 0.62f + 0.34f * exp)
                                 ),
                                 startX = bubbleLeft,
-                                endX = bubbleLeft + bubbleW
+                                endX = bubbleRight
                             ),
                             topLeft = Offset(bubbleLeft, bubbleTop),
                             size = Size(bubbleW, bubbleH),
@@ -879,14 +878,15 @@ fun AppNavigationBar(
                             style = Stroke(width = outerStrokeW)
                         )
 
-                        val topGlintW = bubbleW * 0.56f
+                        // Top & Bottom wet specular catchlight arcs on the droplet crown
+                        val topGlintW = bubbleW * 0.58f
                         val topGlintStartX = bubbleLeft + (bubbleW - topGlintW) / 2f
-                        val topGlintY = bubbleTop + 1.8.dp.toPx()
+                        val topGlintY = bubbleTop + 1.6.dp.toPx()
                         drawLine(
                             brush = Brush.horizontalGradient(
                                 colors = listOf(
                                     Color.Transparent,
-                                    Color.White.copy(alpha = 0.52f + 0.38f * exp),
+                                    Color.White.copy(alpha = 0.58f + 0.36f * exp),
                                     Color.Transparent
                                 ),
                                 startX = topGlintStartX,
@@ -894,20 +894,20 @@ fun AppNavigationBar(
                             ),
                             start = Offset(topGlintStartX, topGlintY),
                             end = Offset(topGlintStartX + topGlintW, topGlintY),
-                            strokeWidth = (1.1f + 0.6f * exp).dp.toPx(),
+                            strokeWidth = (1.15f + 0.65f * exp).dp.toPx(),
                             cap = StrokeCap.Round
                         )
 
-                        val botGlintW = bubbleW * 0.48f
+                        val botGlintW = bubbleW * 0.50f
                         val botGlintStartX = bubbleLeft + (bubbleW - botGlintW) / 2f
-                        val botGlintY = bubbleTop + bubbleH - 1.8.dp.toPx()
+                        val botGlintY = bubbleBottom - 1.6.dp.toPx()
                         drawLine(
                             brush = Brush.horizontalGradient(
                                 colors = listOf(
                                     Color.Transparent,
-                                    iceCyan.copy(alpha = 0.28f + 0.32f * exp),
-                                    Color.White.copy(alpha = 0.42f + 0.38f * exp),
-                                    warmAmberCaustic.copy(alpha = 0.28f + 0.32f * exp),
+                                    v2CyanCaustic.copy(alpha = 0.26f + 0.36f * exp),
+                                    Color.White.copy(alpha = 0.48f + 0.38f * exp),
+                                    v2BlueAccent.copy(alpha = 0.26f + 0.36f * exp),
                                     Color.Transparent
                                 ),
                                 startX = botGlintStartX,
@@ -915,7 +915,7 @@ fun AppNavigationBar(
                             ),
                             start = Offset(botGlintStartX, botGlintY),
                             end = Offset(botGlintStartX + botGlintW, botGlintY),
-                            strokeWidth = (1.0f + 0.5f * exp).dp.toPx(),
+                            strokeWidth = (1.05f + 0.55f * exp).dp.toPx(),
                             cap = StrokeCap.Round
                         )
                     }
@@ -923,8 +923,10 @@ fun AppNavigationBar(
             contentAlignment = Alignment.Center
         ) {
             val horizontalInnerPad = 5.dp
+            val v2ActiveBlue = Color(0xFF1E90FF)
+            val v2ChromaCyan = Color(0xFF00E5FF)
 
-            // Foreground Tab Items Row (Icon on top + Label text below)
+            // Foreground Tab Items Row (Icon on top + Label text below, keeping our 4-tab layout)
             Row(
                 modifier = Modifier
                     .fillMaxSize()
@@ -933,12 +935,15 @@ fun AppNavigationBar(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 navigationItems.forEachIndexed { index, screen ->
-                    val distanceFromBubble = abs(animatedIndex - index.toFloat())
+                    val signedDist = animatedIndex - index.toFloat()
+                    val distanceFromBubble = abs(signedDist)
                     val isHoveredOrSelected = distanceFromBubble < 0.5f
                     val iconRes = remember(isHoveredOrSelected, screen) {
                         if (isHoveredOrSelected) screen.iconIdActive else screen.iconIdInactive
                     }
 
+                    // In V2 video: active tab inside the Liquid Glass pill glows in vibrant Electric Blue (#1E90FF),
+                    // while inactive tabs remain crisp pure white.
                     val contentColor by animateColorAsState(
                         targetValue = if (isEditorial) {
                             if (isHoveredOrSelected) {
@@ -948,30 +953,89 @@ fun AppNavigationBar(
                             }
                         } else {
                             if (isHoveredOrSelected) {
-                                if (isDark) Color.White else Color(0xFF0A0D14)
+                                v2ActiveBlue
                             } else {
-                                if (isDark) Color.White.copy(alpha = 0.78f) else Color(0xFF334155)
+                                if (isDark) Color.White.copy(alpha = 0.90f) else Color(0xFF1E293B)
                             }
                         },
-                        animationSpec = tween(durationMillis = 120, easing = FastOutSlowInEasing),
+                        animationSpec = tween(durationMillis = 110, easing = FastOutSlowInEasing),
                         label = "navItemColor_$index"
                     )
+
+                    // V2 Optical Rim Refraction: when the curved edge of the water lens passes over an icon/label
+                    // (distanceFromBubble in 0.15..0.85 while lensExpansionProgress > 0), the curved meniscus
+                    // magnifies, stretches, and creates a bright blue/cyan chromatic dispersion halo!
+                    val edgeRefractionFactor = if (!isEditorial && lensExpansionProgress > 0.04f) {
+                        val edgeProximity = (1f - abs(distanceFromBubble - 0.46f) / 0.46f).coerceIn(0f, 1f)
+                        edgeProximity * lensExpansionProgress
+                    } else {
+                        0f
+                    }
 
                     Box(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxHeight()
                             .graphicsLayer {
-                                val dist = abs(animatedIndex - index.toFloat()).coerceIn(0f, 1f)
+                                val dist = distanceFromBubble.coerceIn(0f, 1f)
                                 val proximity = 1f - dist
-                                val scale = 1f + proximity * (0.04f + 0.11f * lensExpansionProgress)
-                                scaleX = scale
-                                scaleY = scale
-                                translationY = -proximity * 2.5.dp.toPx() * lensExpansionProgress
+                                // Center magnification + V2 curved-edge horizontal lens stretch
+                                val baseScale = 1f + proximity * (0.04f + 0.11f * lensExpansionProgress)
+                                val edgeStretchX = 1f + edgeRefractionFactor * 0.14f
+                                val edgeStretchY = 1f + edgeRefractionFactor * 0.06f
+                                scaleX = baseScale * edgeStretchX
+                                scaleY = baseScale * edgeStretchY
+                                // Radial refraction push away from lens center near the curved meniscus rim
+                                val radialPushPx = (-signedDist).coerceIn(-1f, 1f) *
+                                    edgeRefractionFactor * 4.5.dp.toPx()
+                                translationX = radialPushPx
+                                translationY = -proximity * 2.2.dp.toPx() * lensExpansionProgress
                             }
                             .testTag("nav_item_${screen.route}"),
                         contentAlignment = Alignment.Center
                     ) {
+                        // V2 Chromatic Dispersion Ghost Layer (visible when the curved water-lens edge refracts an item)
+                        if (edgeRefractionFactor > 0.05f) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                                modifier = Modifier.graphicsLayer {
+                                    alpha = (edgeRefractionFactor * 0.75f).coerceIn(0f, 0.85f)
+                                    val shiftDir = if (signedDist >= 0f) -1f else 1f
+                                    translationX = shiftDir * (2.6.dp.toPx() * edgeRefractionFactor)
+                                    scaleX = 1.06f
+                                    scaleY = 1.04f
+                                }
+                            ) {
+                                if (screen == Screens.Library) {
+                                    LibraryBookshelfIcon(
+                                        tint = v2ChromaCyan,
+                                        modifier = Modifier.size(if (slimNav) 20.dp else 22.dp)
+                                    )
+                                } else {
+                                    Icon(
+                                        painter = painterResource(id = iconRes),
+                                        contentDescription = null,
+                                        tint = v2ChromaCyan,
+                                        modifier = Modifier.size(if (slimNav) 20.dp else 22.dp)
+                                    )
+                                }
+
+                                if (!slimNav) {
+                                    Spacer(modifier = Modifier.height(3.dp))
+                                    Text(
+                                        text = stringResource(screen.titleId),
+                                        color = v2ChromaCyan,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+
+                        // Primary Crisp Foreground Icon + Label
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center

@@ -59,6 +59,7 @@ import com.nanzbeatles.nanas.ui.screens.settings.integrations.ListenTogetherSett
 import com.nanzbeatles.nanas.ui.screens.recognition.RecognitionScreen
 import com.nanzbeatles.nanas.ui.screens.recognition.RecognitionHistoryScreen
 import com.nanzbeatles.nanas.ui.screens.wrapped.WrappedScreen
+import com.nanzbeatles.nanas.poster.PosterScreen
 import com.nanzbeatles.nanas.utils.rememberEnumPreference
 import com.nanzbeatles.nanas.utils.rememberPreference
 
@@ -112,6 +113,10 @@ fun NavGraphBuilder.navigationBuilder(
 
     composable("stats") {
         StatsScreen(navController)
+    }
+
+    composable("poster") {
+        PosterScreen(navController)
     }
 
     composable("mood_and_genres") {
@@ -414,7 +419,10 @@ fun NavGraphBuilder.navigationBuilder(
         WrappedScreen(navController)
     }
 
-    dialog("equalizer") {
+    dialog(
+        route = "equalizer",
+        dialogProperties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+    ) {
         EqScreen()
     }
 

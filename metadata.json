@@ -1,6 +1,6 @@
 {
   "name": "Beatles",
-  "description": "",
+  "description": "Material 3 music and video streaming player for Android with synced lyrics, Listen Together, and local library support.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

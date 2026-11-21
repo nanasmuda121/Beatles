@@ -102,6 +102,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.ui.graphics.asImageBitmap
+import com.nanzbeatles.nanas.eq.data.EQProfileRepository
 import com.nanzbeatles.nanas.lyricvideo.AudioAmplitudeAnalyzer
 import com.nanzbeatles.nanas.lyricvideo.LyricVideoRenderer
 import com.nanzbeatles.nanas.lyricvideo.LyricVideoShareUtils
@@ -150,6 +151,8 @@ fun LyricVideoCreationDialog(
 
     val currentSongEntity by (playerConnection?.currentSong ?: kotlinx.coroutines.flow.MutableStateFlow(null)).collectAsState(initial = null)
     val activeAudioStyle by (playerConnection?.service?.audioStyleMode ?: kotlinx.coroutines.flow.MutableStateFlow(AudioStyleMode.NORMAL)).collectAsState()
+    val activeEqSummary = remember { EQProfileRepository.getActiveEqSummaryLabel(context) }
+    val activeEqTag = remember { EQProfileRepository.buildActiveEqCacheTag(context) }
     val songLyricsOffsetMs = (currentSongEntity?.song?.lyricsOffset ?: 0).toLong()
 
     // Strictly exclude any translations or secondary lines from VideoLyrics, and apply song's lyricsOffset
@@ -228,7 +231,7 @@ fun LyricVideoCreationDialog(
     // Real-audio sub-bass amplitudes pre-analyzed for 100% bass-accurate live preview
     var previewAmplitudes by remember { mutableStateOf<FloatArray?>(null) }
 
-    LaunchedEffect(mediaMetadata.id, startTimeSec, endTimeSec, activeAudioStyle) {
+    LaunchedEffect(mediaMetadata.id, startTimeSec, endTimeSec, activeAudioStyle, activeEqTag) {
         val startMs = (startTimeSec * 1000L).toLong()
         val durMs = ((endTimeSec - startTimeSec) * 1000L).toLong().coerceAtLeast(1000L)
         previewRenderer.clipStartTimeMs = startMs
@@ -412,6 +415,22 @@ fun LyricVideoCreationDialog(
                                         },
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                                     )
+                                }
+                                if (!activeEqSummary.isNullOrBlank()) {
+                                    Surface(
+                                        shape = RoundedCornerShape(50),
+                                        color = MaterialTheme.colorScheme.secondaryContainer
+                                    ) {
+                                        Text(
+                                            text = activeEqSummary,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                        )
+                                    }
                                 }
                             }
                             Text(

@@ -959,14 +959,33 @@ class MainActivity : ComponentActivity() {
                                 enter = fadeIn(animationSpec = tween(durationMillis = 300)),
                                 exit = fadeOut(animationSpec = tween(durationMillis = 200))
                             ) {
+                                val isEditorialTopBar = com.nanzbeatles.nanas.ui.theme.LocalAppVisualStyle.current == "EDITORIAL"
+                                val topBarBrush = if (isEditorialTopBar) {
+                                    androidx.compose.ui.graphics.Brush.verticalGradient(
+                                        listOf(
+                                            MaterialTheme.colorScheme.background.copy(alpha = 0.96f),
+                                            MaterialTheme.colorScheme.background.copy(alpha = 0.92f)
+                                        )
+                                    )
+                                } else if (useDarkTheme) {
+                                    androidx.compose.ui.graphics.Brush.verticalGradient(
+                                        listOf(
+                                            Color(0xFF0E131D).copy(alpha = 0.88f),
+                                            Color(0xFF090D14).copy(alpha = 0.76f)
+                                        )
+                                    )
+                                } else {
+                                    androidx.compose.ui.graphics.Brush.verticalGradient(
+                                        listOf(
+                                            Color(0xFFF6F9FE).copy(alpha = 0.92f),
+                                            Color(0xFFEEF3FA).copy(alpha = 0.84f)
+                                        )
+                                    )
+                                }
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .background(
-                                            MaterialTheme.colorScheme.background.copy(
-                                                alpha = if (useDarkTheme) 0.92f else 0.95f
-                                            )
-                                        )
+                                        .background(topBarBrush)
                                         .windowInsetsPadding(
                                             WindowInsets.systemBars.only(WindowInsetsSides.Top)
                                         )
@@ -1001,7 +1020,6 @@ class MainActivity : ComponentActivity() {
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
-                                            val iconBg = if (useDarkTheme) Color(0xFF16171B) else Color(0xFFF0F1F5)
                                             val iconTint = if (useDarkTheme) Color.White else Color.Black
                                             val isLibraryRoute = currentRoute == Screens.Library.route
                                             val (localProfileAvatarUri, _) = rememberPreference(
@@ -1012,8 +1030,7 @@ class MainActivity : ComponentActivity() {
                                                 Box(
                                                     modifier = Modifier
                                                         .size(34.dp)
-                                                        .clip(CircleShape)
-                                                        .background(iconBg, CircleShape)
+                                                        .liquidGlassPill(isSelected = false, shape = CircleShape)
                                                         .clickable { navController.navigate("history") },
                                                     contentAlignment = Alignment.Center
                                                 ) {
@@ -1027,8 +1044,7 @@ class MainActivity : ComponentActivity() {
                                                 Box(
                                                     modifier = Modifier
                                                         .size(34.dp)
-                                                        .clip(CircleShape)
-                                                        .background(iconBg, CircleShape)
+                                                        .liquidGlassPill(isSelected = false, shape = CircleShape)
                                                         .clickable { navController.navigate("stats") },
                                                     contentAlignment = Alignment.Center
                                                 ) {
@@ -1044,8 +1060,7 @@ class MainActivity : ComponentActivity() {
                                             Box(
                                                 modifier = Modifier
                                                     .size(34.dp)
-                                                    .clip(CircleShape)
-                                                    .background(iconBg, CircleShape)
+                                                    .liquidGlassPill(isSelected = false, shape = CircleShape)
                                                     .clickable {
                                                         navController.navigate("settings/appearance/theme") {
                                                             launchSingleTop = true
@@ -1064,14 +1079,10 @@ class MainActivity : ComponentActivity() {
                                             Box(
                                                 modifier = Modifier
                                                     .size(34.dp)
-                                                    .clip(CircleShape)
-                                                    .background(
-                                                        if (isIslandActive) {
-                                                            if (useDarkTheme) Color.White else Color.Black
-                                                        } else {
-                                                            iconBg
-                                                        },
-                                                        CircleShape
+                                                    .liquidGlassPill(
+                                                        isSelected = isIslandActive,
+                                                        shape = CircleShape,
+                                                        accentColor = Color(0xFF1E90FF)
                                                     )
                                                     .clickable {
                                                         if ((dynamicIslandAutoMode || dynamicIslandEnabled) && dynamicIslandDismissed) {
@@ -1086,7 +1097,11 @@ class MainActivity : ComponentActivity() {
                                                     painter = painterResource(R.drawable.equalizer),
                                                     contentDescription = "Dynamic Island",
                                                     tint = if (isIslandActive) {
-                                                        if (useDarkTheme) Color.Black else Color.White
+                                                        if (isEditorialTopBar) {
+                                                            if (useDarkTheme) Color.Black else Color.White
+                                                        } else {
+                                                            if (useDarkTheme) Color(0xFF63B3FF) else Color(0xFF0B65C6)
+                                                        }
                                                     } else {
                                                         iconTint
                                                     },
@@ -1096,8 +1111,7 @@ class MainActivity : ComponentActivity() {
                                             Box(
                                                 modifier = Modifier
                                                     .size(34.dp)
-                                                    .clip(CircleShape)
-                                                    .background(iconBg, CircleShape)
+                                                    .liquidGlassPill(isSelected = false, shape = CircleShape)
                                                     .clickable {
                                                         val startDestId = navController.graph.startDestinationId
                                                         navController.navigate(Screens.Profile.route) {

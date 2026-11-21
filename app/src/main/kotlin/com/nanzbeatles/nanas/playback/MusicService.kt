@@ -489,8 +489,8 @@ class MusicService :
     private val _playerFlow = MutableStateFlow<ExoPlayer?>(null)
     val playerFlow = _playerFlow.asStateFlow()
 
-    private val playerSilenceProcessors = HashMap<Player, SilenceDetectorAudioProcessor>()
-    private val playerReverbProcessors = HashMap<Player, ReverbAudioProcessor>()
+    private val playerSilenceProcessors = java.util.concurrent.ConcurrentHashMap<Player, SilenceDetectorAudioProcessor>()
+    private val playerReverbProcessors = java.util.concurrent.ConcurrentHashMap<Player, ReverbAudioProcessor>()
 
     val audioStyleMode = MutableStateFlow(AudioStyleMode.NORMAL)
 
@@ -852,18 +852,13 @@ class MusicService :
         scope.launch {
             eqProfileRepository.activeProfile.collect { profile ->
                 if (profile != null) {
-                    val result = equalizerService.applyProfile(profile)
-                    if (result.isSuccess && player.playbackState == Player.STATE_READY && player.isPlaying) {
-                        // Instant update: flush buffers and seek slightly to re-process audio
-                        // Small seek to force re-buffer through the new EQ settings
-                        // Seek to current position effectively resets the pipeline
-                        player.seekTo(player.currentPosition) 
+                    if (::player.isInitialized) {
+                        player.setOffloadEnabled(false)
                     }
+                    secondaryPlayer?.setOffloadEnabled(false)
+                    equalizerService.applyProfile(profile)
                 } else {
                     equalizerService.disable()
-                    if (player.playbackState == Player.STATE_READY && player.isPlaying) {
-                        player.seekTo(player.currentPosition)
-                    }
                 }
             }
         }
@@ -1042,6 +1037,17 @@ class MusicService :
             .distinctUntilChanged()
             .collectLatest(scope) { enabled ->
                 dynamicRangeCompressionProcessor?.enabled = enabled
+            }
+
+        dataStore.data
+            .map { (it[AudioStyleModeKey] ?: AudioStyleMode.NORMAL.name).toEnum(AudioStyleMode.NORMAL) }
+            .distinctUntilChanged()
+            .collectLatest(scope) { mode ->
+                audioStyleMode.value = mode
+                equalizerService.disableVocalSuppression()
+                playerReverbProcessors.values.forEach { processor ->
+                    processor.setAudioStyleMode(mode)
+                }
             }
 
         // Re-sync presence when the "use details" preference changes.
@@ -3487,8 +3493,8 @@ class MusicService :
             ) = DefaultAudioSink
                 .Builder(this@MusicService)
                 .setAudioCapabilities(AudioCapabilities.getCapabilities(context))
-                .setEnableFloatOutput(enableFloatOutput)
-                .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                .setEnableFloatOutput(false)
+                .setEnableAudioTrackPlaybackParams(false)
                 .setAudioProcessorChain(
                     StudioAudioProcessorChain(
                         eqProcessor,

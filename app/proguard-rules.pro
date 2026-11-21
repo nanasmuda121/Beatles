@@ -82,3 +82,7 @@
 -keep class com.nanzbeatles.nanas.db.entities.** { *; }
 -keep class com.nanzbeatles.nanas.db.dao.** { *; }
 -keep class com.nanzbeatles.nanas.db.MusicDatabase { *; }
+
+# ML Kit Selfie Segmentation
+-keep class com.google.mlkit.** { *; }
+-dontwarn com.google.mlkit.**

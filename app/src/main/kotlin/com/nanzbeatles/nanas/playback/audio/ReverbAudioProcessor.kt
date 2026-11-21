@@ -14,17 +14,24 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.abs
 import kotlin.math.ceil
+import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
- * Studio DSP Audio Processor for **Normal**, **Speed Up**, and **Slowed + Reverb**:
- * - **Normal**: Zero-overhead bit-exact pass-through once envelopes settle.
- * - **Speed Up**: True 4-point Hermite cubic spline analog varispeed (+20% speed & pitch).
- * - **Slowed + Reverb**: 4-point Hermite cubic spline analog varispeed (0.86x) + LFO-modulated
- *   canonical unity-gain Schroeder concert hall reverb with 32 ms pre-delay and 2-pole silk filter.
+ * Studio DSP Audio Processor for all [AudioStyleMode] presets:
+ * - **Normal**: Zero-overhead bit-exact pass-through.
+ * - **Sped up (1.20x)** & **Nightcore (1.40x)**: 4-point Hermite cubic spline analog varispeed.
+ * - **Slowed + reverb (0.86x)** & **Super slowed (0.72x)**: 4-point Hermite cubic spline analog
+ *   varispeed + LFO-modulated Schroeder concert hall reverb.
+ * - **Lo-fi (0.94x)**: Relaxed 0.94x varispeed + warm vintage tape low-pass filter + room reverb.
+ * - **8D (1.0x)**: 360-degree binaural auto-panning orbit with Interaural Time Delay (ITD),
+ *   far-ear pinna head-shadow filtering, and 3D spatial hall ambience.
+ * - **Konser (1.0x)**: Grand live concert hall acoustic reflections, stereo stage widening,
+ *   early reflections, and lush long-decay arena reverb at natural tempo.
  */
 @UnstableApi
 class ReverbAudioProcessor : AudioProcessor {
@@ -49,9 +56,20 @@ class ReverbAudioProcessor : AudioProcessor {
     private var wetEnvelope: Float = 0.0f
 
     fun setAudioStyleMode(mode: AudioStyleMode) {
+        val previousMode = styleMode
         styleMode = mode
         enabled = mode.reverbEnabled
         setTargetSpeed(mode.speed)
+
+        if (mode == AudioStyleMode.EIGHT_D && previousMode != AudioStyleMode.EIGHT_D) {
+            eightDPhase = 1.15
+        }
+
+        if (mode.reverbEnabled) {
+            if (wetEnvelope < 0.35f) {
+                wetEnvelope = 0.35f
+            }
+        }
     }
 
     fun setTargetSpeed(speed: Float) {
@@ -64,24 +82,18 @@ class ReverbAudioProcessor : AudioProcessor {
         return (playoutDuration.toDouble() * speed).roundToLong()
     }
 
-    // Mutually prime comb and all-pass tunings at 44100 Hz (eliminates periodic metallic ringing)
+    // Mutually prime comb and all-pass tunings at 44100 Hz
     private val baseInputDiffuserTunings = intArrayOf(149, 211)
     private val baseCombTunings = intArrayOf(1117, 1187, 1277, 1361, 1423, 1493, 1559, 1619)
     private val baseAllpassTunings = intArrayOf(557, 443, 347, 227)
     private val baseStereoSpread = 29
 
-    // Lush, dark-velvet concert hall parameters
-    private val roomFeedback = 0.82f
-    private val hfDamp1 = 0.68f
+    // Base Schroeder tank parameters
+    private val hfDamp1 = 0.64f
     private val hfDamp2 = 1.0f - hfDamp1
-    private val inputDiffuserFeedback = 0.45f
-    private val allpassFeedback = 0.50f
-    private val inputGain = 0.042f
-
-    // Dry / Wet stereo cross-mix for Slowed + Reverb
-    private val dryLevel = 0.88f
-    private val wet1 = 0.26f
-    private val wet2 = 0.08f
+    private val inputDiffuserFeedback = 0.48f
+    private val allpassFeedback = 0.52f
+    private val inputGain = 0.068f
 
     // Filter coefficients (computed dynamically per sampleRate)
     private var inHpfCoeff = 0.027f
@@ -89,6 +101,16 @@ class ReverbAudioProcessor : AudioProcessor {
     private var outLpfCoeff = 0.34f
     private var outHpfCoeff = 0.012f
     private var dryWarmthCoeff = 0.82f
+    private var lofiLpfCoeff = 0.38f
+    private var headShadowCoeff = 0.22f
+
+    // 8D Binaural ITD (Interaural Time Delay) & Head-Shadow State
+    private var itdBufferL = FloatArray(0)
+    private var itdBufferR = FloatArray(0)
+    private var itdWriteIdx = 0
+    private var maxItdSamples = 28f
+    private var headShadowL = 0f
+    private var headShadowR = 0f
 
     // 4-point Hermite cubic varispeed resampler state across buffers
     private var fracPos: Double = 0.0
@@ -102,14 +124,20 @@ class ReverbAudioProcessor : AudioProcessor {
     private var x1R = 0f
     private var x2R = 0f
 
-    // Pre-delay circular buffer (~32 ms)
+    // Pre-delay circular buffer (~34 ms)
     private var preDelayBufferL = FloatArray(0)
     private var preDelayBufferR = FloatArray(0)
     private var preDelayIdx = 0
+    private var earlyTapOffsetL = 16
+    private var earlyTapOffsetR = 24
 
-    // Input & output filter states for Reverb
+    // Input & output filter states for Reverb & Lo-Fi
     private var dryWarmL = 0f
     private var dryWarmR = 0f
+    private var lofiLp1L = 0f
+    private var lofiLp1R = 0f
+    private var lofiLp2L = 0f
+    private var lofiLp2R = 0f
     private var inHpfStateL = 0f
     private var inHpfStateR = 0f
     private var inLpf1StateL = 0f
@@ -147,10 +175,14 @@ class ReverbAudioProcessor : AudioProcessor {
 
     // Quadrature LFO state for chorus-modulated all-pass diffusion
     private var lfoPhaseL = 0.0
-    private var lfoPhaseR = 1.57079632679 // +90 degrees quadrature offset
+    private var lfoPhaseR = 1.57079632679
     private var lfoIncL = 0.0
     private var lfoIncR = 0.0
     private var lfoDepthSamples = 3.5f
+
+    // 8D Binaural Spatial Rotation LFO state (~0.18 Hz = ~5.5-second full rotation)
+    private var eightDPhase = 1.15
+    private var eightDInc = 0.0
 
     private var allocatedSampleRate = 0
 
@@ -164,24 +196,33 @@ class ReverbAudioProcessor : AudioProcessor {
         val scale = sr / 44100f
         val spread = max(3, (baseStereoSpread * scale).roundToInt())
 
-        // Compute sample-rate-accurate filter coefficients for Reverb
         val twoPiOverSr = (2.0 * Math.PI / sampleRate.toDouble()).toFloat()
-        inHpfCoeff = (twoPiOverSr * 190f).coerceIn(0.005f, 0.15f)
-        inLpfCoeff = (twoPiOverSr * 2550f).coerceIn(0.10f, 0.65f)
-        outLpfCoeff = (twoPiOverSr * 3100f).coerceIn(0.12f, 0.70f)
-        outHpfCoeff = (twoPiOverSr * 85f).coerceIn(0.002f, 0.08f)
+        inHpfCoeff = (twoPiOverSr * 165f).coerceIn(0.005f, 0.15f)
+        inLpfCoeff = (twoPiOverSr * 3600f).coerceIn(0.10f, 0.75f)
+        outLpfCoeff = (twoPiOverSr * 4200f).coerceIn(0.12f, 0.78f)
+        outHpfCoeff = (twoPiOverSr * 75f).coerceIn(0.002f, 0.08f)
         dryWarmthCoeff = (twoPiOverSr * 9500f).coerceIn(0.55f, 0.92f)
+        lofiLpfCoeff = (twoPiOverSr * 3400f).coerceIn(0.15f, 0.65f)
+        headShadowCoeff = (twoPiOverSr * 1700f).coerceIn(0.08f, 0.45f)
 
-        // LFO modulation rates (~0.48 Hz Left, ~0.59 Hz Right)
+        maxItdSamples = (0.00068f * sr).coerceIn(12f, 64f)
+        val itdBufLen = ceil(maxItdSamples + 8f).toInt()
+        itdBufferL = FloatArray(itdBufLen)
+        itdBufferR = FloatArray(itdBufLen)
+        itdWriteIdx = 0
+
         lfoIncL = (2.0 * Math.PI * 0.48) / sampleRate.toDouble()
         lfoIncR = (2.0 * Math.PI * 0.59) / sampleRate.toDouble()
         lfoDepthSamples = 3.8f * scale
 
-        // 32 ms stereo pre-delay
-        val preDelayLen = max(32, (0.032f * sampleRate).roundToInt())
+        eightDInc = (2.0 * Math.PI * 0.18) / sampleRate.toDouble()
+
+        val preDelayLen = max(48, (0.034f * sampleRate).roundToInt())
         preDelayBufferL = FloatArray(preDelayLen)
         preDelayBufferR = FloatArray(preDelayLen)
         preDelayIdx = 0
+        earlyTapOffsetL = max(8, (0.019f * sampleRate).roundToInt()).coerceAtMost(preDelayLen - 2)
+        earlyTapOffsetR = max(12, (0.027f * sampleRate).roundToInt()).coerceAtMost(preDelayLen - 2)
 
         for (i in 0 until 2) {
             val lenL = max(32, (baseInputDiffuserTunings[i] * scale).roundToInt())
@@ -224,6 +265,10 @@ class ReverbAudioProcessor : AudioProcessor {
         preDelayIdx = 0
         dryWarmL = 0f
         dryWarmR = 0f
+        lofiLp1L = 0f
+        lofiLp1R = 0f
+        lofiLp2L = 0f
+        lofiLp2R = 0f
         inHpfStateL = 0f
         inHpfStateR = 0f
         inLpf1StateL = 0f
@@ -236,6 +281,12 @@ class ReverbAudioProcessor : AudioProcessor {
         outLpf2StateR = 0f
         outDcStateL = 0f
         outDcStateR = 0f
+
+        itdBufferL.fill(0f)
+        itdBufferR.fill(0f)
+        itdWriteIdx = 0
+        headShadowL = 0f
+        headShadowR = 0f
 
         for (i in 0 until 2) {
             inDiffBuffersL[i].fill(0f)
@@ -290,7 +341,6 @@ class ReverbAudioProcessor : AudioProcessor {
 
     @Suppress("NOTHING_TO_INLINE")
     private inline fun softTapeSaturate(x: Float): Float {
-        // Stereo-safe soft limiter above 0.90f so peaks never digital-clip
         val absX = abs(x)
         return if (absX <= 0.90f) {
             x
@@ -323,12 +373,33 @@ class ReverbAudioProcessor : AudioProcessor {
         return s0 + frac * (s1 - s0)
     }
 
+    @Suppress("NOTHING_TO_INLINE")
+    private inline fun readFractionalDelay(
+        buf: FloatArray,
+        writeIdx: Int,
+        delaySamples: Float,
+    ): Float {
+        val bufSize = buf.size
+        if (bufSize < 2) return 0f
+        val clamped = delaySamples.coerceIn(0f, (bufSize - 2).toFloat())
+        val delayInt = clamped.toInt()
+        val frac = clamped - delayInt.toFloat()
+
+        var r0 = writeIdx - delayInt
+        if (r0 < 0) r0 += bufSize
+        var r1 = r0 - 1
+        if (r1 < 0) r1 += bufSize
+        val s0 = buf[r0]
+        val s1 = buf[r1]
+        return s0 + frac * (s1 - s0)
+    }
+
     override fun queueInput(inputBuffer: ByteBuffer) {
         if (!inputBuffer.hasRemaining()) return
 
         val remaining = inputBuffer.remaining()
         val mode = styleMode
-        val targetWet = if (enabled || mode == AudioStyleMode.SLOWED_REVERB) 1.0f else 0.0f
+        val targetWet = if (enabled || mode.reverbEnabled) 1.0f else 0.0f
         val tgtSpeed = targetSpeed
 
         // Pure zero-overhead pass-through when Normal mode is settled
@@ -354,6 +425,48 @@ class ReverbAudioProcessor : AudioProcessor {
 
         allocateDelayLinesIfNeeded(inputAudioFormat.sampleRate)
 
+        val roomFeedback: Float
+        val dryLevel: Float
+        val wet1: Float
+        val wet2: Float
+        when (mode) {
+            AudioStyleMode.SUPER_SLOWED -> {
+                roomFeedback = 0.88f
+                dryLevel = 0.80f
+                wet1 = 0.56f
+                wet2 = 0.24f
+            }
+            AudioStyleMode.LOFI -> {
+                roomFeedback = 0.76f
+                dryLevel = 0.90f
+                wet1 = 0.26f
+                wet2 = 0.12f
+            }
+            AudioStyleMode.EIGHT_D -> {
+                roomFeedback = 0.86f
+                dryLevel = 0.86f
+                wet1 = 0.74f
+                wet2 = 0.46f
+            }
+            AudioStyleMode.CONCERT -> {
+                roomFeedback = 0.905f
+                dryLevel = 0.68f
+                wet1 = 1.18f
+                wet2 = 0.68f
+            }
+            else -> {
+                roomFeedback = 0.84f
+                dryLevel = 0.84f
+                wet1 = 0.48f
+                wet2 = 0.20f
+            }
+        }
+
+        val isLofi = mode == AudioStyleMode.LOFI
+        val isSuperSlowed = mode == AudioStyleMode.SUPER_SLOWED
+        val isEightD = mode == AudioStyleMode.EIGHT_D
+        val isConcert = mode == AudioStyleMode.CONCERT
+
         val channelCount = inputAudioFormat.channelCount
         val frameSize = 2 * channelCount
         val inFrameCount = remaining / frameSize
@@ -375,9 +488,15 @@ class ReverbAudioProcessor : AudioProcessor {
         val pdBufR = preDelayBufferR
         val pdLen = pdBufL.size
         var pdIdx = preDelayIdx
+        val tapOffL = earlyTapOffsetL
+        val tapOffR = earlyTapOffsetR
 
         var dWarmL = dryWarmL
         var dWarmR = dryWarmR
+        var lf1L = lofiLp1L
+        var lf1R = lofiLp1R
+        var lf2L = lofiLp2L
+        var lf2R = lofiLp2R
         var hpfL = inHpfStateL
         var hpfR = inHpfStateR
         var lpf1L = inLpf1StateL
@@ -395,6 +514,16 @@ class ReverbAudioProcessor : AudioProcessor {
         var curSpeed = currentSpeed
         var phaseL = lfoPhaseL
         var phaseR = lfoPhaseR
+        var rotPhase = eightDPhase
+
+        val itdBufL = itdBufferL
+        val itdBufR = itdBufferR
+        val itdLen = itdBufL.size
+        var itdIdx = itdWriteIdx
+        var hsL = headShadowL
+        var hsR = headShadowR
+        val hsCoeff = headShadowCoeff
+        val maxItd = maxItdSamples
 
         val invShort = 1.0f / 32768.0f
         val twoPi = 2.0 * Math.PI
@@ -431,7 +560,6 @@ class ReverbAudioProcessor : AudioProcessor {
                 x2R = inSampleR
             }
 
-            // 4-point, 3rd-order Hermite cubic spline coefficients for [x0, x1]
             val c0L = x0L
             val c1L = 0.5f * (x1L - xm1L)
             val c2L = xm1L - 2.5f * x0L + 2.0f * x1L - 0.5f * x2L
@@ -443,52 +571,127 @@ class ReverbAudioProcessor : AudioProcessor {
             val c3R = 0.5f * (x2R - xm1R) + 1.5f * (x0R - x1R)
 
             while (fracPos < 1.0) {
-                // Fast, click-free envelope glide (~35 ms transition)
-                curSpeed += 0.00035f * (tgtSpeed - curSpeed)
-                curWet += 0.00045f * (targetWet - curWet)
+                curSpeed += 0.00065f * (tgtSpeed - curSpeed)
+                curWet += 0.0015f * (targetWet - curWet)
 
                 val f = fracPos.toFloat()
                 val rawDryL = ((c3L * f + c2L) * f + c1L) * f + c0L
                 val rawDryR = ((c3R * f + c2R) * f + c1R) * f + c0R
 
-                // Subtle analog silk filter on the resampled signal when slowed
                 dWarmL += dryWarmthCoeff * (rawDryL - dWarmL)
                 dWarmR += dryWarmthCoeff * (rawDryR - dWarmR)
-                val dryL = if (curSpeed < 0.99f) (rawDryL * 0.65f + dWarmL * 0.35f) else rawDryL
-                val dryR = if (curSpeed < 0.99f) (rawDryR * 0.65f + dWarmR * 0.35f) else rawDryR
 
-                // =========================================================================
-                // MODULATED CONCERT HALL REVERB (Slowed + Reverb)
-                // =========================================================================
+                lf1L += lofiLpfCoeff * (rawDryL - lf1L)
+                lf2L += lofiLpfCoeff * (lf1L - lf2L)
+                lf1R += lofiLpfCoeff * (rawDryR - lf1R)
+                lf2R += lofiLpfCoeff * (lf1R - lf2R)
+
+                var dryL = when {
+                    isLofi -> (rawDryL * 0.22f) + (lf2L * 0.78f)
+                    isSuperSlowed -> (rawDryL * 0.52f) + (dWarmL * 0.48f)
+                    curSpeed < 0.99f -> (rawDryL * 0.65f) + (dWarmL * 0.35f)
+                    else -> rawDryL
+                }
+                var dryR = when {
+                    isLofi -> (rawDryR * 0.22f) + (lf2R * 0.78f)
+                    isSuperSlowed -> (rawDryR * 0.52f) + (dWarmR * 0.48f)
+                    curSpeed < 0.99f -> (rawDryR * 0.65f) + (dWarmR * 0.35f)
+                    else -> rawDryR
+                }
+
+                // 8D Binaural 360-Degree Spatial Orbit
+                if (isEightD) {
+                    rotPhase += eightDInc
+                    if (rotPhase >= twoPi) rotPhase -= twoPi
+                    val pan = sin(rotPhase).toFloat()
+                    val depth = cos(rotPhase).toFloat()
+
+                    val monoPoint = (dryL + dryR) * 0.5f
+                    val stereoNuance = (dryL - dryR) * 0.14f
+                    val rearFactor = if (depth < 0f) (-depth * 0.45f) else 0f
+
+                    val rearWarmMono = (lf2L + lf2R) * 0.5f
+                    val spatialSource = (monoPoint * (1f - rearFactor)) + (rearWarmMono * rearFactor)
+
+                    val srcForL = spatialSource + stereoNuance
+                    val srcForR = spatialSource - stereoNuance
+
+                    if (itdLen > 2) {
+                        itdBufL[itdIdx] = srcForL
+                        itdBufR[itdIdx] = srcForR
+
+                        val delaySamplesL = if (pan > 0f) (pan * maxItd) else 0f
+                        val delaySamplesR = if (pan < 0f) (-pan * maxItd) else 0f
+
+                        val delayedL = readFractionalDelay(itdBufL, itdIdx, delaySamplesL)
+                        val delayedR = readFractionalDelay(itdBufR, itdIdx, delaySamplesR)
+
+                        itdIdx++
+                        if (itdIdx >= itdLen) itdIdx = 0
+
+                        hsL += hsCoeff * (delayedL - hsL)
+                        hsR += hsCoeff * (delayedR - hsR)
+
+                        val shadowMixL = if (pan > 0f) (pan * 0.65f) else 0f
+                        val shadowMixR = if (pan < 0f) (-pan * 0.65f) else 0f
+
+                        val earSignalL = delayedL * (1f - shadowMixL) + hsL * shadowMixL
+                        val earSignalR = delayedR * (1f - shadowMixR) + hsR * shadowMixR
+
+                        val normL = ((1.0f - pan) * 0.5f).coerceIn(0f, 1f)
+                        val normR = ((1.0f + pan) * 0.5f).coerceIn(0f, 1f)
+                        val gainL = 0.03f + 1.19f * (normL * sqrt(normL))
+                        val gainR = 0.03f + 1.19f * (normR * sqrt(normR))
+
+                        dryL = earSignalL * gainL
+                        dryR = earSignalR * gainR
+                    }
+                }
+
+                // Konser Live Concert Hall Stereo Stage Widener
+                if (isConcert) {
+                    val cMid = (dryL + dryR) * 0.5f
+                    val cSide = (dryL - dryR) * 0.5f
+                    dryL = (cMid * 0.92f) + (cSide * 1.32f)
+                    dryR = (cMid * 0.92f) - (cSide * 1.32f)
+                }
+
+                // Modulated Concert Hall Reverb + Early Reflections
                 var wetSignalL = 0f
                 var wetSignalR = 0f
 
                 if (curWet > 0.0001f) {
-                    // 1. High-Pass Filter (~190 Hz) so kick/808 sub-bass never muddies the reverb tank
                     hpfL += inHpfCoeff * (dryL - hpfL)
                     hpfR += inHpfCoeff * (dryR - hpfR)
                     val hpL = dryL - hpfL
                     val hpR = dryR - hpfR
 
-                    // 2. 2-Pole Cascaded Warm Low-Pass Filter (~2.55 kHz) for silky sibilance roll-off
                     lpf1L += inLpfCoeff * (hpL - lpf1L)
                     lpf2L += inLpfCoeff * (lpf1L - lpf2L)
                     lpf1R += inLpfCoeff * (hpR - lpf1R)
                     lpf2R += inLpfCoeff * (lpf1R - lpf2R)
 
-                    // 3. Stereo Pre-Delay (~32 ms)
+                    val tankInL = if (isConcert || isEightD) (lpf2L * 0.65f + hpL * 0.35f) else lpf2L
+                    val tankInR = if (isConcert || isEightD) (lpf2R * 0.65f + hpR * 0.35f) else lpf2R
+
                     val delayedL = pdBufL[pdIdx]
                     val delayedR = pdBufR[pdIdx]
-                    pdBufL[pdIdx] = lpf2L * inputGain
-                    pdBufR[pdIdx] = lpf2R * inputGain
+
+                    var erIdxL = pdIdx - tapOffL
+                    if (erIdxL < 0) erIdxL += pdLen
+                    var erIdxR = pdIdx - tapOffR
+                    if (erIdxR < 0) erIdxR += pdLen
+                    val earlyRefL = pdBufL[erIdxL]
+                    val earlyRefR = pdBufR[erIdxR]
+
+                    pdBufL[pdIdx] = tankInL * inputGain
+                    pdBufR[pdIdx] = tankInR * inputGain
                     pdIdx++
                     if (pdIdx >= pdLen) pdIdx = 0
 
-                    // Cross-blend stereo excitation for cohesive 3D hall space
-                    var diffL = (delayedL * 0.78f) + (delayedR * 0.22f)
-                    var diffR = (delayedR * 0.78f) + (delayedL * 0.22f)
+                    var diffL = (delayedL * 0.76f) + (delayedR * 0.24f)
+                    var diffR = (delayedR * 0.76f) + (delayedL * 0.24f)
 
-                    // 4. 2-Stage Input Diffuser All-Pass (softens percussive attacks into velvet)
                     for (d in 0 until 2) {
                         val dBufL = inDiffBuffersL[d]
                         val dIdxL = inDiffIndicesL[d]
@@ -512,7 +715,6 @@ class ReverbAudioProcessor : AudioProcessor {
                     var outL = 0f
                     var outR = 0f
 
-                    // 5. 8 Parallel Mutually-Prime Low-Pass Damped Comb Filters per channel
                     for (c in 0 until 8) {
                         val bufL = combBuffersL[c]
                         val idxL = combIndicesL[c]
@@ -535,7 +737,6 @@ class ReverbAudioProcessor : AudioProcessor {
                         outR += readR
                     }
 
-                    // Advance quadrature LFOs for modulated all-pass diffusion
                     phaseL += lfoIncL
                     if (phaseL >= twoPi) phaseL -= twoPi
                     phaseR += lfoIncR
@@ -543,7 +744,6 @@ class ReverbAudioProcessor : AudioProcessor {
                     val modL = sin(phaseL).toFloat() * lfoDepthSamples
                     val modR = sin(phaseR).toFloat() * lfoDepthSamples
 
-                    // 6. 4 Canonical Unity-Gain All-Pass Diffusers per channel (first 2 LFO-modulated)
                     for (a in 0 until 4) {
                         val apBufL = allpassBuffersL[a]
                         val apIdxL = allpassIndicesL[a]
@@ -580,16 +780,18 @@ class ReverbAudioProcessor : AudioProcessor {
                         allpassIndicesR[a] = if (nextApIdxR >= apBufR.size) 0 else nextApIdxR
                     }
 
-                    // 7. Post-tank 2-pole warm low-pass filter + sub-sonic DC blocker
                     oLpf1L += outLpfCoeff * (outL - oLpf1L)
                     oLpf2L += outLpfCoeff * (oLpf1L - oLpf2L)
                     oLpf1R += outLpfCoeff * (outR - oLpf1R)
                     oLpf2R += outLpfCoeff * (oLpf1R - oLpf2R)
 
-                    oDcL += outHpfCoeff * (oLpf2L - oDcL)
-                    oDcR += outHpfCoeff * (oLpf2R - oDcR)
-                    val cleanWetL = oLpf2L - oDcL
-                    val cleanWetR = oLpf2R - oDcR
+                    val tankOutL = if (isConcert) (oLpf2L * 0.55f + outL * 0.45f) + (earlyRefR * 2.4f) else oLpf2L
+                    val tankOutR = if (isConcert) (oLpf2R * 0.55f + outR * 0.45f) + (earlyRefL * 2.4f) else oLpf2R
+
+                    oDcL += outHpfCoeff * (tankOutL - oDcL)
+                    oDcR += outHpfCoeff * (tankOutR - oDcR)
+                    val cleanWetL = tankOutL - oDcL
+                    val cleanWetR = tankOutR - oDcR
 
                     wetSignalL = ((cleanWetL * wet1) + (cleanWetR * wet2)) * curWet
                     wetSignalR = ((cleanWetR * wet1) + (cleanWetL * wet2)) * curWet
@@ -615,6 +817,10 @@ class ReverbAudioProcessor : AudioProcessor {
         preDelayIdx = pdIdx
         dryWarmL = dWarmL
         dryWarmR = dWarmR
+        lofiLp1L = lf1L
+        lofiLp1R = lf1R
+        lofiLp2L = lf2L
+        lofiLp2R = lf2R
         inHpfStateL = hpfL
         inHpfStateR = hpfR
         inLpf1StateL = lpf1L
@@ -627,14 +833,18 @@ class ReverbAudioProcessor : AudioProcessor {
         outLpf2StateR = oLpf2R
         outDcStateL = oDcL
         outDcStateR = oDcR
+        itdWriteIdx = itdIdx
+        headShadowL = hsL
+        headShadowR = hsR
 
         wetEnvelope = curWet
         currentSpeed = curSpeed
         lfoPhaseL = phaseL
         lfoPhaseR = phaseR
+        eightDPhase = rotPhase
 
         inputBuffer.order(srcOrder)
-        inputBuffer.position(inputBuffer.limit())
+        inputBuffer.position(startPosition + inFrameCount * frameSize)
         workBuffer.flip()
         outputBuffer = workBuffer
     }
@@ -658,7 +868,7 @@ class ReverbAudioProcessor : AudioProcessor {
         inputEnded = false
         currentSpeed = targetSpeed
         val mode = styleMode
-        wetEnvelope = if (enabled || mode == AudioStyleMode.SLOWED_REVERB) 1.0f else 0.0f
+        wetEnvelope = if (enabled || mode.reverbEnabled) 1.0f else 0.0f
         clearDelayLines()
     }
 
@@ -673,9 +883,7 @@ class ReverbAudioProcessor : AudioProcessor {
 
 /**
  * Custom [AudioProcessorChain] that places [ReverbAudioProcessor] at the very end of the pipeline
- * and routes pure varispeed modes (`speed == pitch`, such as "Slowed + Reverb" and "Speed Up")
- * through [ReverbAudioProcessor]'s 4-point Hermite cubic spline resampler instead of
- * [SonicAudioProcessor]'s WSOLA speech time-stretcher.
+ * and routes pure varispeed modes (`speed == pitch`) through [ReverbAudioProcessor].
  */
 @UnstableApi
 class StudioAudioProcessorChain(
@@ -701,7 +909,6 @@ class StudioAudioProcessorChain(
         val isPureVarispeed = abs(speed - pitch) < 0.001f
 
         if (isPureVarispeed) {
-            // Bypass WSOLA time-stretching; use smooth 4-point Hermite cubic varispeed in reverbProcessor
             sonicAudioProcessor.setSpeed(1.0f)
             sonicAudioProcessor.setPitch(1.0f)
             reverbProcessor.setTargetSpeed(speed)

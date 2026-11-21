@@ -57,8 +57,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.shape.CircleShape
 import com.nanzbeatles.nanas.R
 import com.nanzbeatles.nanas.ui.screens.OptionStats
+import com.nanzbeatles.nanas.ui.theme.LocalAppVisualStyle
+import com.nanzbeatles.nanas.ui.utils.editorialPillContentColor
+import com.nanzbeatles.nanas.ui.utils.liquidGlassPill
 
 @Composable
 fun <E> ChipsRow(
@@ -69,7 +73,8 @@ fun <E> ChipsRow(
     containerColor: Color = MaterialTheme.colorScheme.surfaceContainer,
 ) {
     val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    val chipShape = RoundedCornerShape(10.dp)
+    val isEditorial = LocalAppVisualStyle.current == "EDITORIAL"
+    val chipShape = if (isEditorial) RoundedCornerShape(10.dp) else CircleShape
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -82,31 +87,27 @@ fun <E> ChipsRow(
 
         chips.forEach { (value, label) ->
             val isSelected = currentValue == value
-            val bg = when {
-                isSelected && isDark -> Color.White
-                isSelected && !isDark -> Color(0xFF101216)
-                isDark -> Color(0xFF15161A)
-                else -> Color(0xFFECEEF3)
-            }
-            val textColor = when {
-                isSelected && isDark -> Color.Black
-                isSelected && !isDark -> Color.White
-                isDark -> Color.White
+            val defaultTextColor = when {
+                isSelected && isDark -> Color(0xFF63B3FF)
+                isSelected && !isDark -> Color(0xFF0B65C6)
+                isDark -> Color.White.copy(alpha = 0.88f)
                 else -> Color(0xFF181A20)
             }
-            val borderColor = when {
-                isSelected -> Color.Transparent
-                isDark -> Color.White.copy(alpha = 0.06f)
-                else -> Color.Black.copy(alpha = 0.06f)
-            }
+            val textColor = editorialPillContentColor(
+                isSelected = isSelected,
+                defaultColor = defaultTextColor,
+                isDark = isDark
+            )
 
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .padding(vertical = 4.dp)
-                    .clip(chipShape)
-                    .background(bg, chipShape)
-                    .border(1.dp, borderColor, chipShape)
+                    .liquidGlassPill(
+                        isSelected = isSelected,
+                        shape = chipShape,
+                        accentColor = Color(0xFF1E90FF)
+                    )
                     .clickable { onValueUpdate(value) }
                     .padding(horizontal = 16.dp, vertical = 9.dp)
             ) {
@@ -138,7 +139,8 @@ fun <Int> ChoiceChipsRow(
     containerColor: Color = MaterialTheme.colorScheme.surfaceContainer,
 ) {
     val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    val chipShape = RoundedCornerShape(10.dp)
+    val isEditorial = LocalAppVisualStyle.current == "EDITORIAL"
+    val chipShape = if (isEditorial) RoundedCornerShape(10.dp) else CircleShape
     var expandIconDegree by remember { mutableFloatStateOf(0f) }
     val rotationAnimation by animateFloatAsState(
         targetValue = expandIconDegree,
@@ -156,14 +158,20 @@ fun <Int> ChoiceChipsRow(
         var expanded by remember { mutableStateOf(false) }
 
         Column {
-            val activeBg = if (isDark) Color.White else Color(0xFF101216)
-            val activeFg = if (isDark) Color.Black else Color.White
+            val activeFg = editorialPillContentColor(
+                isSelected = true,
+                defaultColor = if (isDark) Color(0xFF63B3FF) else Color(0xFF0B65C6),
+                isDark = isDark
+            )
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .padding(vertical = 4.dp)
-                    .clip(chipShape)
-                    .background(activeBg, chipShape)
+                    .liquidGlassPill(
+                        isSelected = true,
+                        shape = chipShape,
+                        accentColor = Color(0xFF1E90FF)
+                    )
                     .clickable {
                         expanded = !expanded
                         expandIconDegree -= 180
@@ -233,26 +241,28 @@ fun <Int> ChoiceChipsRow(
             ) {
                 chips.forEach { (value, label) ->
                     val isSelected = currentValue == value
-                    val bg = when {
-                        isSelected && isDark -> Color.White
-                        isSelected && !isDark -> Color(0xFF101216)
-                        isDark -> Color(0xFF15161A)
-                        else -> Color(0xFFECEEF3)
-                    }
-                    val textColor = when {
-                        isSelected && isDark -> Color.Black
-                        isSelected && !isDark -> Color.White
-                        isDark -> Color.White
+                    val defaultTextColor = when {
+                        isSelected && isDark -> Color(0xFF63B3FF)
+                        isSelected && !isDark -> Color(0xFF0B65C6)
+                        isDark -> Color.White.copy(alpha = 0.88f)
                         else -> Color(0xFF181A20)
                     }
+                    val textColor = editorialPillContentColor(
+                        isSelected = isSelected,
+                        defaultColor = defaultTextColor,
+                        isDark = isDark
+                    )
                     Spacer(Modifier.width(8.dp))
 
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
                             .padding(vertical = 4.dp)
-                            .clip(chipShape)
-                            .background(bg, chipShape)
+                            .liquidGlassPill(
+                                isSelected = isSelected,
+                                shape = chipShape,
+                                accentColor = Color(0xFF1E90FF)
+                            )
                             .clickable { onValueUpdate(value) }
                             .padding(horizontal = 14.dp, vertical = 8.dp)
                     ) {

@@ -305,13 +305,67 @@ val AudioStyleModeKey = stringPreferencesKey("audio_style_mode")
 
 enum class AudioStyleMode(
     val label: String,
+    val description: String,
     val speed: Float,
     val pitch: Float,
     val reverbEnabled: Boolean,
 ) {
-    NORMAL("Normal", 1.0f, 1.0f, false),
-    SPEED_UP("Speed Up", 1.20f, 1.20f, false),
-    SLOWED_REVERB("Slowed + Reverb", 0.86f, 0.86f, true),
+    NORMAL(
+        label = "Normal",
+        description = "Lagu apa adanya",
+        speed = 1.0f,
+        pitch = 1.0f,
+        reverbEnabled = false,
+    ),
+    SPEED_UP(
+        label = "Sped up",
+        description = "Lebih cepat dan tinggi, seperti versi sped up",
+        speed = 1.20f,
+        pitch = 1.20f,
+        reverbEnabled = false,
+    ),
+    SLOWED_REVERB(
+        label = "Slowed + reverb",
+        description = "Lebih pelan dan rendah, dengan gema lembut",
+        speed = 0.86f,
+        pitch = 0.86f,
+        reverbEnabled = true,
+    ),
+    SUPER_SLOWED(
+        label = "Super slowed",
+        description = "Jauh lebih pelan dan rendah, dengan gema dalam",
+        speed = 0.72f,
+        pitch = 0.72f,
+        reverbEnabled = true,
+    ),
+    NIGHTCORE(
+        label = "Nightcore",
+        description = "Jauh lebih cepat dan tinggi, 1.4x",
+        speed = 1.40f,
+        pitch = 1.40f,
+        reverbEnabled = false,
+    ),
+    LOFI(
+        label = "Lo-fi",
+        description = "Hangat dan santai, sedikit lebih pelan, dengan gema tipis",
+        speed = 0.94f,
+        pitch = 0.94f,
+        reverbEnabled = true,
+    ),
+    EIGHT_D(
+        label = "8D",
+        description = "Suara berputar di sekeliling kepala. Paling enak pakai headset",
+        speed = 1.0f,
+        pitch = 1.0f,
+        reverbEnabled = true,
+    ),
+    CONCERT(
+        label = "Konser",
+        description = "Gema ruangan besar seperti aula konser",
+        speed = 1.0f,
+        pitch = 1.0f,
+        reverbEnabled = true,
+    ),
 }
 
 enum class LibraryViewType {

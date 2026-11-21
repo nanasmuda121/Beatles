@@ -16,13 +16,14 @@ data class ParametricEQBand(
 )
 
 /**
- * Represents a complete parametric EQ configuration for a headphone
- * Parsed from AutoEQ preset files (...ParametricEQ.txt)
+ * Represents a complete parametric EQ configuration for a headphone or 10-band graphic EQ,
+ * including optional dedicated low-frequency Bass Boost enhancement (in dB).
  */
 @Serializable
 data class ParametricEQ(
     val preamp: Double,                         // Preamp/gain in dB (to prevent clipping)
     val bands: List<ParametricEQBand>,          // List of EQ bands
+    val bassBoostDb: Double = 0.0,              // Dedicated low-frequency Bass Boost in dB (0.0..12.0)
     val metadata: Map<String, String> = emptyMap()  // Additional metadata from file
 ) {
     companion object {

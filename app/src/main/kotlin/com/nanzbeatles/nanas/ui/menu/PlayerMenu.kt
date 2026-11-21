@@ -10,6 +10,8 @@ import android.widget.Toast
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -145,6 +147,19 @@ fun PlayerMenu(
     var showChoosePlaylistDialog by rememberSaveable {
         mutableStateOf(false)
     }
+
+    val artistNamesForExport = mediaMetadata.artists.joinToString(", ") { it.name }
+    val saveToDeviceController = com.nanzbeatles.nanas.utils.rememberSaveToDeviceController(
+        songId = mediaMetadata.id,
+        title = mediaMetadata.title,
+        artist = artistNamesForExport,
+        onFinishedDismissMenu = onDismiss,
+    )
+    val hasOfflineFile = com.nanzbeatles.nanas.utils.rememberIsOfflineFileAvailable(
+        songId = mediaMetadata.id,
+        download = download,
+        isDownloadedInDb = librarySong?.song?.isDownloaded == true,
+    )
     
     var showListenTogetherDialog by rememberSaveable {
         mutableStateOf(false)
@@ -210,6 +225,16 @@ fun PlayerMenu(
                 }
             }
         }
+    }
+
+    var showAudioStyleDialog by rememberSaveable {
+        mutableStateOf(false)
+    }
+
+    if (showAudioStyleDialog) {
+        AudioStyleDialog(
+            onDismiss = { showAudioStyleDialog = false },
+        )
     }
 
     var showPitchTempoDialog by rememberSaveable {
@@ -631,84 +656,102 @@ fun PlayerMenu(
 
         item {
             Material3MenuGroup(
-                items = listOf(
+                items = buildList {
                     when (download?.state) {
                         Download.STATE_COMPLETED -> {
-                            Material3MenuItemData(
-                                title = {
-                                    Text(
-                                        text = stringResource(R.string.remove_download)
-                                    )
-                                },
-                                icon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.offline),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                },
-                                onClick = {
-                                    DownloadService.sendRemoveDownload(
-                                        context,
-                                        ExoDownloadService::class.java,
-                                        mediaMetadata.id,
-                                        false,
-                                    )
-                                }
+                            add(
+                                com.nanzbeatles.nanas.utils.buildSaveToDeviceMenuItem(
+                                    controller = saveToDeviceController,
+                                )
+                            )
+                            add(
+                                Material3MenuItemData(
+                                    title = {
+                                        Text(
+                                            text = stringResource(R.string.remove_download)
+                                        )
+                                    },
+                                    icon = {
+                                        Icon(
+                                            painter = painterResource(R.drawable.offline),
+                                            contentDescription = null,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    },
+                                    onClick = {
+                                        DownloadService.sendRemoveDownload(
+                                            context,
+                                            ExoDownloadService::class.java,
+                                            mediaMetadata.id,
+                                            false,
+                                        )
+                                    }
+                                )
                             )
                         }
 
                         Download.STATE_QUEUED, Download.STATE_DOWNLOADING -> {
-                            Material3MenuItemData(
-                                title = { Text(text = stringResource(R.string.downloading)) },
-                                icon = {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(24.dp),
-                                        strokeWidth = 2.dp
-                                    )
-                                },
-                                onClick = {
-                                    DownloadService.sendRemoveDownload(
-                                        context,
-                                        ExoDownloadService::class.java,
-                                        mediaMetadata.id,
-                                        false,
-                                    )
-                                }
+                            add(
+                                Material3MenuItemData(
+                                    title = { Text(text = stringResource(R.string.downloading)) },
+                                    icon = {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(24.dp),
+                                            strokeWidth = 2.dp
+                                        )
+                                    },
+                                    onClick = {
+                                        DownloadService.sendRemoveDownload(
+                                            context,
+                                            ExoDownloadService::class.java,
+                                            mediaMetadata.id,
+                                            false,
+                                        )
+                                    }
+                                )
                             )
                         }
 
                         else -> {
-                            Material3MenuItemData(
-                                title = { Text(text = stringResource(R.string.action_download)) },
-                                icon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.download),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(24.dp)
+                            if (hasOfflineFile) {
+                                add(
+                                    com.nanzbeatles.nanas.utils.buildSaveToDeviceMenuItem(
+                                        controller = saveToDeviceController,
                                     )
-                                },
-                                onClick = {
-                                    database.transaction {
-                                        insert(mediaMetadata)
+                                )
+                            }
+                            add(
+                                Material3MenuItemData(
+                                    title = { Text(text = stringResource(R.string.action_download)) },
+                                    icon = {
+                                        Icon(
+                                            painter = painterResource(R.drawable.download),
+                                            contentDescription = null,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    },
+                                    onClick = {
+                                        database.transaction {
+                                            insert(mediaMetadata)
+                                        }
+                                        val downloadRequest =
+                                            DownloadRequest
+                                                .Builder(mediaMetadata.id, mediaMetadata.id.toUri())
+                                                .setCustomCacheKey(mediaMetadata.id)
+                                                .setData(mediaMetadata.title.toByteArray())
+                                                .build()
+                                        DownloadService.sendAddDownload(
+                                            context,
+                                            ExoDownloadService::class.java,
+                                            downloadRequest,
+                                            false,
+                                        )
                                     }
-                                    val downloadRequest =
-                                        DownloadRequest
-                                            .Builder(mediaMetadata.id, mediaMetadata.id.toUri())
-                                            .setCustomCacheKey(mediaMetadata.id)
-                                            .setData(mediaMetadata.title.toByteArray())
-                                            .build()
-                                    DownloadService.sendAddDownload(
-                                        context,
-                                        ExoDownloadService::class.java,
-                                        downloadRequest,
-                                        false,
-                                    )
-                                }
+                                )
                             )
                         }
                     }
-                )
+                }
             )
         }
 
@@ -839,10 +882,40 @@ fun PlayerMenu(
                         )
                         add(
                             Material3MenuItemData(
-                                title = { Text(text = "Gaya Suara & Tempo") },
+                                title = { Text(text = "Gaya suara") },
                                 description = {
                                     val currentStyle by playerConnection.audioStyleMode.collectAsState()
-                                    Text(text = "Aktif: ${currentStyle.label} • Bass Boost, Instrumen, Vokal, Slowed")
+                                    Text(
+                                        text = if (currentStyle == com.nanzbeatles.nanas.constants.AudioStyleMode.NORMAL) {
+                                            "Sped up, slowed + reverb, super slowed, lo-fi, 8D, dan lainnya"
+                                        } else {
+                                            "${currentStyle.label} • Sped up, slowed + reverb, super slowed, lo-fi, 8D, dan lainnya"
+                                        }
+                                    )
+                                },
+                                icon = {
+                                    val currentStyle by playerConnection.audioStyleMode.collectAsState()
+                                    Icon(
+                                        painter = painterResource(R.drawable.speed),
+                                        contentDescription = null,
+                                        tint = if (currentStyle != com.nanzbeatles.nanas.constants.AudioStyleMode.NORMAL) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                },
+                                onClick = {
+                                    showAudioStyleDialog = true
+                                }
+                            )
+                        )
+                        add(
+                            Material3MenuItemData(
+                                title = { Text(text = "Lanjutan") },
+                                description = {
+                                    Text(text = "Sesuaikan tempo dan nada lagu")
                                 },
                                 icon = {
                                     Icon(
@@ -879,11 +952,15 @@ fun PlayerMenu(
     }
 }
 
+@Composable
+fun AudioStyleDialog(onDismiss: () -> Unit) {
+    com.nanzbeatles.nanas.ui.player.AudioStyleDialog(onDismiss = onDismiss)
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TempoPitchDialog(onDismiss: () -> Unit) {
     val playerConnection = LocalPlayerConnection.current ?: return
-    val currentStyle by playerConnection.audioStyleMode.collectAsState()
     var tempo by remember {
         mutableFloatStateOf(playerConnection.player.playbackParameters.speed)
     }
@@ -901,7 +978,7 @@ fun TempoPitchDialog(onDismiss: () -> Unit) {
         properties = DialogProperties(usePlatformDefaultWidth = false),
         onDismissRequest = onDismiss,
         title = {
-            Text("Gaya Suara & Tempo")
+            Text("Lanjutan")
         },
         dismissButton = {
             TextButton(
@@ -919,47 +996,18 @@ fun TempoPitchDialog(onDismiss: () -> Unit) {
             TextButton(
                 onClick = onDismiss,
             ) {
-                Text(stringResource(android.R.string.ok))
+                Text("Oke")
             }
         },
         text = {
             Column {
+                Text(
+                    text = "Sesuaikan tempo dan nada lagu",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
                 if (!isInRoom) {
-                    Text(
-                        text = "Preset Gaya Suara",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    FlowRow(
-                        maxItemsInEachRow = 3,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 16.dp)
-                    ) {
-                        com.nanzbeatles.nanas.constants.AudioStyleMode.entries.forEach { mode ->
-                            val selected = currentStyle == mode
-                            FilterChip(
-                                selected = selected,
-                                onClick = {
-                                    playerConnection.setAudioStyleMode(mode)
-                                    tempo = mode.speed
-                                    transposeValue = round(12 * log2(mode.pitch)).toInt()
-                                },
-                                label = {
-                                    Text(
-                                        text = mode.label,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-
                     ValueAdjuster(
                         icon = R.drawable.speed,
                         currentValue = tempo,

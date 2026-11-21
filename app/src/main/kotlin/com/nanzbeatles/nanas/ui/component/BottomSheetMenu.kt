@@ -129,18 +129,19 @@ fun BottomSheetMenu(
     val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val accent = MaterialTheme.colorScheme.primary
     val sheetShape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp)
-    val sheetGlassColor = if (isDark) Color(0xFF0B0E17).copy(alpha = 0.84f) else Color(0xFFF6F8FC).copy(alpha = 0.90f)
+    val sheetGlassColor = if (isDark) Color(0xFF0C111B).copy(alpha = 0.90f) else Color(0xFFF4F7FC).copy(alpha = 0.92f)
     val borderBrush = Brush.verticalGradient(
         colors = if (isDark) {
             listOf(
-                Color.White.copy(alpha = 0.48f),
-                accent.copy(alpha = 0.28f),
+                Color.White.copy(alpha = 0.56f),
+                Color(0xFF1E90FF).copy(alpha = 0.36f),
+                Color(0xFF00E5FF).copy(alpha = 0.18f),
                 Color.Transparent
             )
         } else {
             listOf(
                 Color.White.copy(alpha = 0.96f),
-                accent.copy(alpha = 0.24f),
+                Color(0xFF1E90FF).copy(alpha = 0.28f),
                 Color.Transparent
             )
         }

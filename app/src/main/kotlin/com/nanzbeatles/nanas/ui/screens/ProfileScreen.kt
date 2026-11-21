@@ -1771,6 +1771,10 @@ fun ProfileScreen(
                 showQuickToolsSheet = false
                 navController.navigate("stats")
             },
+            onNavigatePoster = {
+                showQuickToolsSheet = false
+                navController.navigate("poster")
+            },
             onOpenDynamicIsland = {
                 showQuickToolsSheet = false
                 showDynamicIslandDialog = true
@@ -3885,6 +3889,7 @@ private fun Top10SongsModalDialog(
 private fun QuickProfileToolsDialog(
     onNavigateHistory: () -> Unit,
     onNavigateStats: () -> Unit,
+    onNavigatePoster: () -> Unit,
     onOpenDynamicIsland: () -> Unit,
     onNavigateTheme: () -> Unit,
     onNavigateBackupRestore: () -> Unit,
@@ -3922,6 +3927,12 @@ private fun QuickProfileToolsDialog(
                     title = "Statistik Detail",
                     subtitle = "Grafik artis, album, dan lagu teratas",
                     onClick = onNavigateStats
+                )
+                QuickToolItemRow(
+                    iconRes = R.drawable.stats,
+                    title = "Poster Musik Favorit",
+                    subtitle = "Buat poster 3 lagu favorit dengan fotomu, lalu simpan atau bagikan",
+                    onClick = onNavigatePoster
                 )
                 QuickToolItemRow(
                     iconRes = R.drawable.backup,

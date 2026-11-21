@@ -57,7 +57,13 @@ constructor(
 ) {
     private val connectivityManager = context.getSystemService<ConnectivityManager>()!!
     private val audioQuality by enumPreference(context, AudioQualityKey, AudioQuality.AUTO)
-    private val songUrlCache = HashMap<String, Pair<String, Long>>()
+    private data class CachedDownloadUrl(
+        val url: String,
+        val expiresAtMs: Long,
+        val headers: Map<String, String>,
+    )
+
+    private val songUrlCache = HashMap<String, CachedDownloadUrl>()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -83,64 +89,73 @@ constructor(
                     ),
                 ),
         ) { dataSpec ->
-            val mediaId = dataSpec.key ?: error("No media id")
-            val length = if (dataSpec.length >= 0) dataSpec.length else 1
+            val mediaId = dataSpec.key ?: throw java.io.IOException("No media id")
 
-            if (playerCache.isCached(mediaId, dataSpec.position, length)) {
+            // Only bypass URL resolution if a bounded range is requested and fully present in playerCache
+            if (dataSpec.length > 0 && playerCache.isCached(mediaId, dataSpec.position, dataSpec.length)) {
                 return@Factory dataSpec
             }
 
-            songUrlCache[mediaId]?.takeIf { it.second > System.currentTimeMillis() }?.let {
-                return@Factory dataSpec.withUri(it.first.toUri())
+            songUrlCache[mediaId]?.takeIf { it.expiresAtMs > System.currentTimeMillis() }?.let { cached ->
+                return@Factory dataSpec
+                    .withUri(cached.url.toUri())
+                    .withRequestHeaders(cached.headers)
             }
 
-            val playbackData = runBlocking(Dispatchers.IO) {
-                YTPlayerUtils.playerResponseForPlayback(
-                    mediaId,
-                    audioQuality = audioQuality,
-                    connectivityManager = connectivityManager,
-                    poTokenProvider = null, // TODO: inject PoTokenProvider when available in DownloadUtil
-                )
-            }.getOrThrow()
+            val playbackData = try {
+                runBlocking(Dispatchers.IO) {
+                    YTPlayerUtils.playerResponseForPlayback(
+                        mediaId,
+                        audioQuality = audioQuality,
+                        connectivityManager = connectivityManager,
+                        poTokenProvider = null,
+                        preferMp4Audio = true,
+                    )
+                }.getOrThrow()
+            } catch (t: Throwable) {
+                throw if (t is java.io.IOException) t else java.io.IOException("Failed to resolve download stream for $mediaId", t)
+            }
             val format = playbackData.format
 
-            database.query {
-                upsert(
-                    FormatEntity(
-                        id = mediaId,
-                        itag = format.itag,
-                        mimeType = format.mimeType.split(";")[0],
-                        codecs = format.mimeType.split("codecs=").getOrNull(1)?.removeSurrounding("\"") ?: "",
-                        bitrate = format.bitrate,
-                        sampleRate = format.audioSampleRate,
-                        contentLength = format.contentLength ?: 0L,
-                        loudnessDb = playbackData.audioConfig?.loudnessDb,
-                        perceptualLoudnessDb = playbackData.audioConfig?.perceptualLoudnessDb,
-                        playbackUrl = playbackData.playbackTracking?.videostatsPlaybackUrl?.baseUrl
-                    ),
-                )
-
-                val now = LocalDateTime.now()
-                val existing = getSongByIdBlocking(mediaId)?.song
-
-                val updatedSong = if (existing != null) {
-                    if (existing.dateDownload == null) {
-                        existing.copy(dateDownload = now)
-                    } else {
-                        existing
-                    }
-                } else {
-                    SongEntity(
-                        id = mediaId,
-                        title = playbackData.videoDetails?.title ?: "Unknown",
-                        duration = playbackData.videoDetails?.lengthSeconds?.toIntOrNull() ?: 0,
-                        thumbnailUrl = playbackData.videoDetails?.thumbnail?.thumbnails?.lastOrNull()?.url,
-                        dateDownload = now,
-                        isDownloaded = false
+            runCatching {
+                database.query {
+                    upsert(
+                        FormatEntity(
+                            id = mediaId,
+                            itag = format.itag,
+                            mimeType = format.mimeType.split(";")[0],
+                            codecs = format.mimeType.split("codecs=").getOrNull(1)?.removeSurrounding("\"") ?: "",
+                            bitrate = format.bitrate,
+                            sampleRate = format.audioSampleRate,
+                            contentLength = format.contentLength ?: 0L,
+                            loudnessDb = playbackData.audioConfig?.loudnessDb,
+                            perceptualLoudnessDb = playbackData.audioConfig?.perceptualLoudnessDb,
+                            playbackUrl = playbackData.playbackTracking?.videostatsPlaybackUrl?.baseUrl
+                        ),
                     )
-                }
 
-                upsert(updatedSong)
+                    val now = LocalDateTime.now()
+                    val existing = getSongByIdBlocking(mediaId)?.song
+
+                    val updatedSong = if (existing != null) {
+                        if (existing.dateDownload == null) {
+                            existing.copy(dateDownload = now)
+                        } else {
+                            existing
+                        }
+                    } else {
+                        SongEntity(
+                            id = mediaId,
+                            title = playbackData.videoDetails?.title ?: "Unknown",
+                            duration = playbackData.videoDetails?.lengthSeconds?.toIntOrNull() ?: 0,
+                            thumbnailUrl = playbackData.videoDetails?.thumbnail?.thumbnails?.lastOrNull()?.url,
+                            dateDownload = now,
+                            isDownloaded = false
+                        )
+                    }
+
+                    upsert(updatedSong)
+                }
             }
 
             val streamUrl = playbackData.streamUrl.let { url ->
@@ -153,8 +168,14 @@ constructor(
                 }
             }
 
-            songUrlCache[mediaId] = streamUrl to (System.currentTimeMillis() + playbackData.streamExpiresInSeconds * 1000L)
-            dataSpec.withUri(streamUrl.toUri())
+            songUrlCache[mediaId] = CachedDownloadUrl(
+                url = streamUrl,
+                expiresAtMs = System.currentTimeMillis() + playbackData.streamExpiresInSeconds * 1000L,
+                headers = playbackData.streamHeaders,
+            )
+            dataSpec
+                .withUri(streamUrl.toUri())
+                .withRequestHeaders(playbackData.streamHeaders)
         }
 
     val downloadNotificationHelper =

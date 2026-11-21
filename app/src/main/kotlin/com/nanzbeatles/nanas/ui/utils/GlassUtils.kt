@@ -33,8 +33,10 @@ import com.nanzbeatles.nanas.ui.theme.LocalAppVisualStyle
 import com.nanzbeatles.nanas.utils.rememberPreference
 
 /**
- * Clean Backdrop that adapts to both Liquid Glass (#000000 / #FFFFFF)
+ * Lightweight Ambient Backdrop that adapts to both Liquid Glass V2
+ * (deep obsidian with subtle sapphire/cyan liquid light depth)
  * and Editorial (Carbon Black #08080A / Warm Magazine Paper #FBF9F5).
+ * Uses zero-cost static GPU gradients (no real-time blur passes).
  */
 @Composable
 fun GlassmorphicAmbientBackdrop(
@@ -42,21 +44,64 @@ fun GlassmorphicAmbientBackdrop(
     modifier: Modifier = Modifier,
 ) {
     val isEditorial = LocalAppVisualStyle.current == "EDITORIAL"
-    val bgColor = when {
-        isEditorial && isDark -> Color(0xFF08080A)
-        isEditorial && !isDark -> Color(0xFFFBF9F5)
-        isDark -> Color.Black
-        else -> Color.White
+    if (isEditorial) {
+        val bgColor = if (isDark) Color(0xFF08080A) else Color(0xFFFBF9F5)
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .background(bgColor)
+        )
+        return
     }
+
+    val baseBrush = if (isDark) {
+        Brush.verticalGradient(
+            colors = listOf(
+                Color(0xFF070B12),
+                Color(0xFF04060A),
+                Color(0xFF060A10)
+            )
+        )
+    } else {
+        Brush.verticalGradient(
+            colors = listOf(
+                Color(0xFFF2F6FC),
+                Color(0xFFF7FAFF),
+                Color(0xFFEEF3FA)
+            )
+        )
+    }
+
+    val topAmbientGlow = if (isDark) {
+        Brush.radialGradient(
+            colors = listOf(
+                Color(0xFF1E90FF).copy(alpha = 0.11f),
+                Color(0xFF00E5FF).copy(alpha = 0.04f),
+                Color.Transparent
+            ),
+            radius = 1100f
+        )
+    } else {
+        Brush.radialGradient(
+            colors = listOf(
+                Color(0xFF1E90FF).copy(alpha = 0.08f),
+                Color(0xFF00E5FF).copy(alpha = 0.03f),
+                Color.Transparent
+            ),
+            radius = 1100f
+        )
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(bgColor)
+            .background(baseBrush)
+            .background(topAmbientGlow)
     )
 }
 
 /**
- * Crystal-Clear ("Bening") 3D Liquid Glass Surface Modifier (or crisp Editorial frame in EDITORIAL mode).
+ * Crystal-Clear ("Bening") 3D Liquid Glass V2 Surface Modifier (or crisp Editorial frame in EDITORIAL mode).
  */
 @Composable
 fun Modifier.crystalLiquidGlassSurface(
@@ -89,27 +134,27 @@ fun Modifier.crystalLiquidGlassSurface(
             )
     }
 
-    // Very clear ("bening") translucent glass base
+    // Liquid Glass V2 smoked translucent glass base with crisp silver-blue rim
     val resolvedBaseTint = baseTint ?: if (isDark) {
-        Color(0xFF0C0E14).copy(alpha = if (isHighlighted) 0.52f else 0.42f)
+        Color(0xFF111621).copy(alpha = if (isHighlighted) 0.82f else 0.72f)
     } else {
-        Color.White.copy(alpha = if (isHighlighted) 0.68f else 0.56f)
+        Color(0xFFF4F7FC).copy(alpha = if (isHighlighted) 0.88f else 0.78f)
     }
 
     val clearSheenGradient = Brush.verticalGradient(
         colors = if (isDark) {
             listOf(
                 Color.White.copy(alpha = if (isHighlighted) 0.18f else 0.12f),
-                Color.White.copy(alpha = 0.03f),
-                Color.Transparent,
-                Color.White.copy(alpha = if (isHighlighted) 0.07f else 0.04f)
+                Color(0xFF1E90FF).copy(alpha = if (isHighlighted) 0.08f else 0.04f),
+                Color.Black.copy(alpha = 0.16f),
+                Color.White.copy(alpha = if (isHighlighted) 0.09f else 0.05f)
             )
         } else {
             listOf(
-                Color.White.copy(alpha = 0.85f),
-                Color.White.copy(alpha = 0.35f),
-                Color.White.copy(alpha = 0.15f),
-                Color.White.copy(alpha = 0.55f)
+                Color.White.copy(alpha = 0.92f),
+                Color(0xFF1E90FF).copy(alpha = 0.05f),
+                Color.White.copy(alpha = 0.22f),
+                Color.White.copy(alpha = 0.65f)
             )
         }
     )
@@ -117,23 +162,24 @@ fun Modifier.crystalLiquidGlassSurface(
     val specularBorder = Brush.linearGradient(
         colors = if (isDark) {
             listOf(
-                Color.White.copy(alpha = if (isHighlighted) 0.52f else 0.34f),
-                Color.White.copy(alpha = if (isHighlighted) 0.18f else 0.10f),
-                Color.White.copy(alpha = if (isHighlighted) 0.32f else 0.20f)
+                Color.White.copy(alpha = if (isHighlighted) 0.58f else 0.38f),
+                Color(0xFF1E90FF).copy(alpha = if (isHighlighted) 0.36f else 0.20f),
+                Color(0xFF00E5FF).copy(alpha = if (isHighlighted) 0.28f else 0.14f),
+                Color.White.copy(alpha = if (isHighlighted) 0.38f else 0.24f)
             )
         } else {
             listOf(
-                Color.Black.copy(alpha = if (isHighlighted) 0.16f else 0.10f),
-                Color.Black.copy(alpha = 0.04f),
-                Color.Black.copy(alpha = if (isHighlighted) 0.12f else 0.08f)
+                Color.White.copy(alpha = 0.95f),
+                Color(0xFF1E90FF).copy(alpha = if (isHighlighted) 0.28f else 0.16f),
+                Color.Black.copy(alpha = if (isHighlighted) 0.14f else 0.08f)
             )
         }
     )
 
     val topGlintColor = if (isDark) {
-        Color.White.copy(alpha = if (isHighlighted) 0.62f else 0.42f)
+        Color.White.copy(alpha = if (isHighlighted) 0.68f else 0.48f)
     } else {
-        Color.White.copy(alpha = 0.95f)
+        Color.White.copy(alpha = 0.96f)
     }
 
     return this
@@ -146,7 +192,7 @@ fun Modifier.crystalLiquidGlassSurface(
                 drawRect(
                     brush = Brush.verticalGradient(
                         colors = listOf(
-                            Color.White.copy(alpha = if (isDark) 0.14f else 0.45f),
+                            Color.White.copy(alpha = if (isDark) 0.15f else 0.48f),
                             Color.Transparent
                         ),
                         startY = 0f,
@@ -177,14 +223,14 @@ fun Modifier.crystalLiquidGlassSurface(
             )
         }
         .border(
-            width = if (isHighlighted) 1.2.dp else 1.dp,
+            width = if (isHighlighted) 1.25.dp else 1.05.dp,
             brush = specularBorder,
             shape = shape
         )
 }
 
 /**
- * Crystal-Clear ("Bening") Liquid Glass Pill Modifier (or Editorial badge in EDITORIAL mode).
+ * Crystal-Clear ("Bening") Liquid Glass V2 Pill Modifier (or Editorial badge in EDITORIAL mode).
  */
 @Composable
 fun Modifier.crystalLiquidGlassPill(
@@ -215,56 +261,66 @@ fun Modifier.crystalLiquidGlassPill(
             .border(width = 1.dp, color = border, shape = editorialShape)
     }
 
-    val accent = accentColor ?: if (isDark) Color.White else Color.Black
+    val accent = accentColor ?: Color(0xFF1E90FF)
 
-    val baseColor = when {
-        isSelected && isDark -> Color.White.copy(alpha = 0.20f)
-        isSelected && !isDark -> Color.Black.copy(alpha = 0.12f)
-        isDark -> Color.White.copy(alpha = 0.08f)
-        else -> Color.Black.copy(alpha = 0.05f)
+    val pillFillBrush = when {
+        isSelected && isDark -> Brush.verticalGradient(
+            colors = listOf(
+                Color.White.copy(alpha = 0.22f),
+                accent.copy(alpha = 0.24f),
+                Color(0xFF0E1522).copy(alpha = 0.85f)
+            )
+        )
+        isSelected && !isDark -> Brush.verticalGradient(
+            colors = listOf(
+                Color.White.copy(alpha = 0.95f),
+                accent.copy(alpha = 0.18f),
+                Color(0xFFE4EEFC).copy(alpha = 0.90f)
+            )
+        )
+        isDark -> Brush.verticalGradient(
+            colors = listOf(
+                Color.White.copy(alpha = 0.13f),
+                Color(0xFF131822).copy(alpha = 0.68f),
+                Color.White.copy(alpha = 0.05f)
+            )
+        )
+        else -> Brush.verticalGradient(
+            colors = listOf(
+                Color.White.copy(alpha = 0.88f),
+                Color(0xFFEEF3FA).copy(alpha = 0.78f),
+                Color.White.copy(alpha = 0.65f)
+            )
+        )
     }
 
     val rimBrush = Brush.linearGradient(
         colors = if (isDark) {
             listOf(
-                Color.White.copy(alpha = if (isSelected) 0.65f else 0.32f),
-                Color.White.copy(alpha = if (isSelected) 0.20f else 0.08f),
-                accent.copy(alpha = if (isSelected) 0.42f else 0.18f)
+                Color.White.copy(alpha = if (isSelected) 0.72f else 0.36f),
+                accent.copy(alpha = if (isSelected) 0.55f else 0.18f),
+                Color(0xFF00E5FF).copy(alpha = if (isSelected) 0.38f else 0.12f),
+                Color.White.copy(alpha = if (isSelected) 0.42f else 0.20f)
             )
         } else {
             listOf(
-                Color.Black.copy(alpha = if (isSelected) 0.28f else 0.12f),
-                Color.Black.copy(alpha = 0.04f),
-                Color.Black.copy(alpha = if (isSelected) 0.20f else 0.08f)
+                Color.White.copy(alpha = 0.96f),
+                accent.copy(alpha = if (isSelected) 0.45f else 0.18f),
+                Color.Black.copy(alpha = if (isSelected) 0.16f else 0.08f)
             )
         }
     )
 
     return this
         .clip(shape)
-        .background(baseColor, shape)
-        .drawWithContent {
-            val topDepth = (size.height * 0.45f).coerceAtMost(18.dp.toPx())
-            if (topDepth > 0f) {
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = if (isDark) (if (isSelected) 0.22f else 0.12f) else 0.55f),
-                            Color.Transparent
-                        ),
-                        startY = 0f,
-                        endY = topDepth
-                    )
-                )
-            }
-            drawContent()
-        }
-        .border(width = if (isSelected) 1.2.dp else 0.9.dp, brush = rimBrush, shape = shape)
+        .background(pillFillBrush, shape)
+        .border(width = if (isSelected) 1.25.dp else 0.95.dp, brush = rimBrush, shape = shape)
 }
 
 /**
- * Card Surface for general app UI (Settings, Menus, Dialogs, Cards).
- * Adapts to Liquid Glass (rounded 22dp soft cards) vs Editorial (sharp 10dp architectural frames).
+ * Lightweight Liquid Glass V2 Card Surface for general app UI (Settings, Menus, Dialogs, Cards).
+ * Uses zero-allocation GPU gradient fills + silver-blue specular borders (no expensive blur passes).
+ * Adapts to Liquid Glass V2 (rounded 22dp translucent smoked glass) vs Editorial (sharp 10dp architectural frames).
  */
 @Composable
 fun Modifier.frostedGlassSurface(
@@ -274,44 +330,76 @@ fun Modifier.frostedGlassSurface(
 ): Modifier {
     val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val isEditorial = LocalAppVisualStyle.current == "EDITORIAL"
-    val effectiveShape = if (isEditorial) RoundedCornerShape(10.dp) else shape
 
-    val bg = baseTint ?: if (isEditorial) {
-        if (isDark) {
+    if (isEditorial) {
+        val editorialShape = RoundedCornerShape(10.dp)
+        val bg = baseTint ?: if (isDark) {
             if (isHighlighted) Color(0xFF1D1D22) else Color(0xFF121216)
         } else {
             if (isHighlighted) Color(0xFFEAE5DC) else Color(0xFFF3EFE7)
         }
-    } else {
-        if (isDark) {
-            if (isHighlighted) Color(0xFF1C1D22) else Color(0xFF121316)
-        } else {
-            if (isHighlighted) Color(0xFFE8EAEF) else Color(0xFFF3F4F7)
-        }
-    }
-
-    val borderColor = if (isEditorial) {
-        if (isDark) {
+        val borderColor = if (isDark) {
             Color(0xFFF5F2EB).copy(alpha = if (isHighlighted) 0.35f else 0.16f)
         } else {
             Color(0xFF111111).copy(alpha = if (isHighlighted) 0.35f else 0.16f)
         }
-    } else {
-        if (isDark) {
-            Color.White.copy(alpha = if (isHighlighted) 0.16f else 0.07f)
-        } else {
-            Color.Black.copy(alpha = if (isHighlighted) 0.14f else 0.06f)
-        }
+        return this
+            .clip(editorialShape)
+            .background(bg, editorialShape)
+            .border(width = 1.dp, color = borderColor, shape = editorialShape)
     }
 
+    // Liquid Glass V2 smoked translucent glass surface (ultra-lightweight GPU gradient)
+    val baseColor = baseTint ?: if (isDark) {
+        if (isHighlighted) Color(0xFF151C28).copy(alpha = 0.84f) else Color(0xFF10141D).copy(alpha = 0.76f)
+    } else {
+        if (isHighlighted) Color(0xFFEAF0FA).copy(alpha = 0.90f) else Color(0xFFF4F7FC).copy(alpha = 0.84f)
+    }
+
+    val glassSheenBrush = Brush.verticalGradient(
+        colors = if (isDark) {
+            listOf(
+                Color.White.copy(alpha = if (isHighlighted) 0.14f else 0.08f),
+                Color(0xFF1E90FF).copy(alpha = if (isHighlighted) 0.06f else 0.02f),
+                Color.Transparent,
+                Color.White.copy(alpha = if (isHighlighted) 0.05f else 0.025f)
+            )
+        } else {
+            listOf(
+                Color.White.copy(alpha = 0.88f),
+                Color(0xFF1E90FF).copy(alpha = if (isHighlighted) 0.05f else 0.02f),
+                Color.White.copy(alpha = 0.25f),
+                Color.White.copy(alpha = 0.55f)
+            )
+        }
+    )
+
+    val borderBrush = Brush.linearGradient(
+        colors = if (isDark) {
+            listOf(
+                Color.White.copy(alpha = if (isHighlighted) 0.42f else 0.22f),
+                Color(0xFF1E90FF).copy(alpha = if (isHighlighted) 0.32f else 0.12f),
+                Color(0xFF00E5FF).copy(alpha = if (isHighlighted) 0.22f else 0.08f),
+                Color.White.copy(alpha = if (isHighlighted) 0.24f else 0.12f)
+            )
+        } else {
+            listOf(
+                Color.White.copy(alpha = 0.95f),
+                Color(0xFF1E90FF).copy(alpha = if (isHighlighted) 0.24f else 0.12f),
+                Color.Black.copy(alpha = if (isHighlighted) 0.12f else 0.07f)
+            )
+        }
+    )
+
     return this
-        .clip(effectiveShape)
-        .background(bg, effectiveShape)
-        .border(width = 1.dp, color = borderColor, shape = effectiveShape)
+        .clip(shape)
+        .background(baseColor, shape)
+        .background(glassSheenBrush, shape)
+        .border(width = if (isHighlighted) 1.2.dp else 1.dp, brush = borderBrush, shape = shape)
 }
 
 /**
- * Pill Modifier for general chips/buttons outside the 4 glass zones.
+ * Lightweight Liquid Glass V2 Pill Modifier for chips, buttons, and action badges across the app.
  */
 @Composable
 fun Modifier.liquidGlassPill(
@@ -323,35 +411,82 @@ fun Modifier.liquidGlassPill(
     val isEditorial = LocalAppVisualStyle.current == "EDITORIAL"
     val effectiveShape = if (isEditorial) RoundedCornerShape(8.dp) else shape
 
-    val bg = when {
-        isEditorial -> when {
+    if (isEditorial) {
+        val bg = when {
             isSelected && isDark -> Color(0xFFF5F2EB)
             isSelected && !isDark -> Color(0xFF111111)
             isDark -> Color(0xFF141418)
             else -> Color(0xFFEDE9E0)
         }
-        isSelected -> if (isDark) Color.White.copy(alpha = 0.22f) else Color.Black.copy(alpha = 0.14f)
-        isDark -> Color.White.copy(alpha = 0.10f)
-        else -> Color.Black.copy(alpha = 0.06f)
-    }
-    val border = when {
-        isEditorial -> when {
+        val border = when {
             isSelected -> Color.Transparent
             isDark -> Color(0xFFF5F2EB).copy(alpha = 0.20f)
             else -> Color(0xFF111111).copy(alpha = 0.18f)
         }
-        isSelected -> if (isDark) Color.White.copy(alpha = 0.38f) else Color.Black.copy(alpha = 0.22f)
-        isDark -> Color.White.copy(alpha = 0.08f)
-        else -> Color.Black.copy(alpha = 0.07f)
+        return this
+            .clip(effectiveShape)
+            .background(bg, effectiveShape)
+            .border(width = 1.dp, color = border, shape = effectiveShape)
     }
+
+    val accent = accentColor ?: Color(0xFF1E90FF)
+
+    val fillBrush = when {
+        isSelected && isDark -> Brush.verticalGradient(
+            colors = listOf(
+                Color.White.copy(alpha = 0.22f),
+                accent.copy(alpha = 0.24f),
+                Color(0xFF101724).copy(alpha = 0.86f)
+            )
+        )
+        isSelected && !isDark -> Brush.verticalGradient(
+            colors = listOf(
+                Color.White.copy(alpha = 0.96f),
+                accent.copy(alpha = 0.18f),
+                Color(0xFFE4EEFC).copy(alpha = 0.90f)
+            )
+        )
+        isDark -> Brush.verticalGradient(
+            colors = listOf(
+                Color.White.copy(alpha = 0.13f),
+                Color(0xFF141923).copy(alpha = 0.72f),
+                Color.White.copy(alpha = 0.05f)
+            )
+        )
+        else -> Brush.verticalGradient(
+            colors = listOf(
+                Color.White.copy(alpha = 0.90f),
+                Color(0xFFEEF3FA).copy(alpha = 0.80f),
+                Color.White.copy(alpha = 0.65f)
+            )
+        )
+    }
+
+    val borderBrush = Brush.linearGradient(
+        colors = if (isDark) {
+            listOf(
+                Color.White.copy(alpha = if (isSelected) 0.65f else 0.30f),
+                accent.copy(alpha = if (isSelected) 0.50f else 0.16f),
+                Color(0xFF00E5FF).copy(alpha = if (isSelected) 0.34f else 0.10f),
+                Color.White.copy(alpha = if (isSelected) 0.38f else 0.16f)
+            )
+        } else {
+            listOf(
+                Color.White.copy(alpha = 0.95f),
+                accent.copy(alpha = if (isSelected) 0.42f else 0.16f),
+                Color.Black.copy(alpha = if (isSelected) 0.15f else 0.08f)
+            )
+        }
+    )
+
     return this
         .clip(effectiveShape)
-        .background(bg, effectiveShape)
-        .border(width = 1.dp, color = border, shape = effectiveShape)
+        .background(fillBrush, effectiveShape)
+        .border(width = if (isSelected) 1.2.dp else 1.dp, brush = borderBrush, shape = effectiveShape)
 }
 
 /**
- * Clean list item surface (no heavy glass border on every song row).
+ * Lightweight list item surface (zero overhead on unselected rows; Liquid Glass V2 highlight on active row).
  */
 @Composable
 fun ModifierFrostedGlassBridge(
@@ -361,20 +496,50 @@ fun ModifierFrostedGlassBridge(
     val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val isEditorial = LocalAppVisualStyle.current == "EDITORIAL"
     val effectiveShape = if (isEditorial) RoundedCornerShape(8.dp) else shape
-    return if (isHighlighted) {
-        thisOrModifier(
-            shape = effectiveShape,
-            bg = if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f)
-        )
-    } else {
-        Modifier
-    }
-}
+    if (!isHighlighted) return Modifier
 
-private fun thisOrModifier(shape: Shape, bg: Color): Modifier =
-    Modifier
-        .clip(shape)
-        .background(bg, shape)
+    if (isEditorial) {
+        val bg = if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f)
+        return Modifier
+            .clip(effectiveShape)
+            .background(bg, effectiveShape)
+    }
+
+    val fillBrush = Brush.horizontalGradient(
+        colors = if (isDark) {
+            listOf(
+                Color(0xFF1E90FF).copy(alpha = 0.16f),
+                Color.White.copy(alpha = 0.08f),
+                Color(0xFF00E5FF).copy(alpha = 0.10f)
+            )
+        } else {
+            listOf(
+                Color(0xFF1E90FF).copy(alpha = 0.12f),
+                Color.White.copy(alpha = 0.70f),
+                Color(0xFF00E5FF).copy(alpha = 0.08f)
+            )
+        }
+    )
+    val rimBrush = Brush.linearGradient(
+        colors = if (isDark) {
+            listOf(
+                Color.White.copy(alpha = 0.32f),
+                Color(0xFF1E90FF).copy(alpha = 0.28f),
+                Color.White.copy(alpha = 0.16f)
+            )
+        } else {
+            listOf(
+                Color.White.copy(alpha = 0.90f),
+                Color(0xFF1E90FF).copy(alpha = 0.25f),
+                Color.Black.copy(alpha = 0.08f)
+            )
+        }
+    )
+    return Modifier
+        .clip(effectiveShape)
+        .background(fillBrush, effectiveShape)
+        .border(width = 1.dp, brush = rimBrush, shape = effectiveShape)
+}
 
 @Composable
 fun ModifierLiquidGlassPillBridge(

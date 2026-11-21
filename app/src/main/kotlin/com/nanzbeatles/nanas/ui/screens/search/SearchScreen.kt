@@ -80,6 +80,10 @@ import com.nanzbeatles.nanas.constants.PauseSearchHistoryKey
 import com.nanzbeatles.nanas.constants.SearchSource
 import com.nanzbeatles.nanas.constants.SearchSourceKey
 import com.nanzbeatles.nanas.db.entities.SearchHistory
+import com.nanzbeatles.nanas.ui.utils.crystalLiquidGlassSurface
+import com.nanzbeatles.nanas.ui.utils.editorialPillContentColor
+import com.nanzbeatles.nanas.ui.utils.frostedGlassSurface
+import com.nanzbeatles.nanas.ui.utils.liquidGlassPill
 import com.nanzbeatles.nanas.utils.rememberEnumPreference
 import com.nanzbeatles.nanas.utils.rememberPreference
 import kotlinx.coroutines.Dispatchers
@@ -145,25 +149,6 @@ fun SearchScreen(
         }
     }
 
-    val accentColor = MaterialTheme.colorScheme.primary
-    val searchPillBg = if (isDark) Color(0xFF0E121B).copy(alpha = 0.48f) else Color.White.copy(alpha = 0.72f)
-    val searchPillFrost = Brush.linearGradient(
-        listOf(
-            if (isDark) Color.White.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.92f),
-            accentColor.copy(alpha = if (isDark) 0.14f else 0.10f),
-            if (isDark) Color.White.copy(alpha = 0.04f) else Color.White.copy(alpha = 0.55f),
-            if (isDark) Color.White.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.78f)
-        )
-    )
-    val searchPillBorder = Brush.linearGradient(
-        listOf(
-            if (isDark) Color.White.copy(alpha = 0.48f) else Color.White.copy(alpha = 0.96f),
-            accentColor.copy(alpha = if (isDark) 0.34f else 0.24f),
-            if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f),
-            if (isDark) Color.White.copy(alpha = 0.24f) else Color.Black.copy(alpha = 0.12f)
-        )
-    )
-
     Scaffold(
         topBar = {
             Column(
@@ -187,13 +172,10 @@ fun SearchScreen(
                         color = if (isDark) Color.White else Color.Black
                     )
 
-                    // Segmented Online / Library 3D Liquid Glass Pill
+                    // Segmented Online / Library 3D Liquid Glass V2 Pill
                     Row(
                         modifier = Modifier
-                            .clip(CircleShape)
-                            .background(searchPillBg, CircleShape)
-                            .background(searchPillFrost, CircleShape)
-                            .border(BorderStroke(1.1.dp, searchPillBorder), CircleShape)
+                            .frostedGlassSurface(shape = CircleShape, isHighlighted = true)
                             .padding(3.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -202,34 +184,33 @@ fun SearchScreen(
                             SearchSource.LOCAL to "Pustaka"
                         ).forEach { (source, label) ->
                             val selected = searchSource == source
-                            val tabBg by animateColorAsState(
-                                targetValue = if (selected) {
-                                    accentColor.copy(alpha = if (isDark) 0.34f else 0.22f)
-                                } else Color.Transparent,
-                                animationSpec = tween(180),
-                                label = "searchSourceBg"
+                            val defaultTabColor = if (selected) {
+                                if (isDark) Color(0xFF63B3FF) else Color(0xFF0B65C6)
+                            } else {
+                                if (isDark) Color(0xFFB4B8C5) else Color(0xFF5A5A60)
+                            }
+                            val targetTabColor = editorialPillContentColor(
+                                isSelected = selected,
+                                defaultColor = defaultTabColor,
+                                isDark = isDark
                             )
                             val tabColor by animateColorAsState(
-                                targetValue = if (selected) {
-                                    if (isDark) Color.White else Color(0xFF0A0D14)
-                                } else {
-                                    if (isDark) Color(0xFFB4B8C5) else Color(0xFF5A5A60)
-                                },
+                                targetValue = targetTabColor,
                                 animationSpec = tween(180),
                                 label = "searchSourceColor"
                             )
                             Box(
                                 modifier = Modifier
-                                    .clip(CircleShape)
-                                    .background(tabBg, CircleShape)
                                     .then(
                                         if (selected) {
-                                            Modifier.border(
-                                                1.dp,
-                                                Color.White.copy(alpha = if (isDark) 0.45f else 0.85f),
-                                                CircleShape
+                                            Modifier.liquidGlassPill(
+                                                isSelected = true,
+                                                shape = CircleShape,
+                                                accentColor = Color(0xFF1E90FF)
                                             )
-                                        } else Modifier
+                                        } else {
+                                            Modifier.clip(CircleShape)
+                                        }
                                     )
                                     .clickable { searchSource = source }
                                     .padding(horizontal = 12.dp, vertical = 6.dp),
@@ -248,28 +229,14 @@ fun SearchScreen(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // 3D Liquid Glass Search Bar Pill
+                // Lightweight 3D Liquid Glass V2 Search Bar Pill (zero blur overhead)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp)
-                        .clip(CircleShape)
-                        .border(BorderStroke(1.2.dp, searchPillBorder), CircleShape),
+                        .crystalLiquidGlassSurface(shape = CircleShape, isHighlighted = true),
                     contentAlignment = Alignment.CenterStart
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .then(
-                                if (liquidGlassEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                    Modifier.blur(28.dp)
-                                } else {
-                                    Modifier
-                                }
-                            )
-                            .background(searchPillBg, CircleShape)
-                            .background(searchPillFrost, CircleShape)
-                    )
 
                     Row(
                         modifier = Modifier

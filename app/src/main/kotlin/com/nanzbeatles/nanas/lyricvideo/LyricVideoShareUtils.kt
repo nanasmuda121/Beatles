@@ -41,6 +41,9 @@ import com.nanzbeatles.nanas.constants.VideoLyricsShowUpcomingKey
 import com.nanzbeatles.nanas.constants.VideoLyricsSnowKey
 import com.nanzbeatles.nanas.constants.VideoLyricsWaveAmplitudePercentKey
 import com.nanzbeatles.nanas.constants.VideoLyricsWaveSpeedPercentKey
+import com.nanzbeatles.nanas.eq.audio.CustomEqualizerAudioProcessor
+import com.nanzbeatles.nanas.eq.data.EQProfileRepository
+import com.nanzbeatles.nanas.eq.data.ParametricEQ
 import com.nanzbeatles.nanas.lyrics.LyricsEntry
 import com.nanzbeatles.nanas.models.MediaMetadata
 import com.nanzbeatles.nanas.playback.audio.ReverbAudioProcessor
@@ -216,7 +219,8 @@ object LyricVideoShareUtils {
     /**
      * Transcodes any audio format (Opus, Vorbis, WebM, MP3, FLAC, AAC) to standard MP4 AAC
      * using MediaCodec decoder and encoder, optionally applying [AudioStyleMode]
-     * (Speed Up or Slowed + Reverb) via [ReverbAudioProcessor].
+     * via [ReverbAudioProcessor] and the active 10-band Equalizer + Bass Boost
+     * via [CustomEqualizerAudioProcessor].
      */
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private fun transcodeAudioToAac(
@@ -224,7 +228,8 @@ object LyricVideoShareUtils {
         targetFile: File,
         startTimeMs: Long,
         durationMs: Long,
-        audioStyleMode: AudioStyleMode = AudioStyleMode.NORMAL
+        audioStyleMode: AudioStyleMode = AudioStyleMode.NORMAL,
+        parametricEQ: ParametricEQ? = null
     ): Boolean {
         val extractor = MediaExtractor()
         var decoder: MediaCodec? = null
@@ -258,10 +263,20 @@ object LyricVideoShareUtils {
                 inputFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT).coerceIn(1, 8)
             } else 2
 
+            val pcmFormat = AudioProcessor.AudioFormat(sampleRate, channelCount, C.ENCODING_PCM_16BIT)
+
+            val eqProcessor = if (parametricEQ != null) {
+                CustomEqualizerAudioProcessor().apply {
+                    applyProfile(parametricEQ)
+                    configure(pcmFormat)
+                    flush()
+                }
+            } else null
+
             val reverbProcessor = if (audioStyleMode != AudioStyleMode.NORMAL) {
                 ReverbAudioProcessor().apply {
                     setAudioStyleMode(audioStyleMode)
-                    configure(AudioProcessor.AudioFormat(sampleRate, channelCount, C.ENCODING_PCM_16BIT))
+                    configure(pcmFormat)
                     flush()
                 }
             } else null
@@ -349,7 +364,7 @@ object LyricVideoShareUtils {
                     }
                 }
 
-                // 2. Drain decoder -> optional ReverbAudioProcessor -> chunked into AAC encoder
+                // 2. Drain decoder -> optional CustomEqualizerAudioProcessor -> optional ReverbAudioProcessor -> chunked into AAC encoder
                 val currentPending = pendingPcmBuffer
                 if ((currentPending == null || !currentPending.hasRemaining()) && !decoderDone) {
                     val decOutIdx = decoder.dequeueOutputBuffer(decoderBufferInfo, timeoutUs)
@@ -361,14 +376,23 @@ object LyricVideoShareUtils {
                         if (decBuf != null && decoderBufferInfo.size > 0 && decoderBufferInfo.presentationTimeUs >= startUs) {
                             decBuf.position(decoderBufferInfo.offset)
                             decBuf.limit(decoderBufferInfo.offset + decoderBufferInfo.size)
-                            if (reverbProcessor != null) {
-                                reverbProcessor.queueInput(decBuf)
-                                pendingPcmBuffer = reverbProcessor.getOutput()
-                            } else {
+
+                            var currentBuf: ByteBuffer = decBuf
+                            if (eqProcessor != null && eqProcessor.isActive) {
+                                eqProcessor.queueInput(currentBuf)
+                                currentBuf = eqProcessor.getOutput()
+                            }
+                            if (reverbProcessor != null && currentBuf.hasRemaining()) {
+                                reverbProcessor.queueInput(currentBuf)
+                                currentBuf = reverbProcessor.getOutput()
+                            }
+                            if (currentBuf === decBuf) {
                                 val copy = ByteBuffer.allocateDirect(decoderBufferInfo.size)
                                 copy.put(decBuf)
                                 copy.flip()
                                 pendingPcmBuffer = copy
+                            } else {
+                                pendingPcmBuffer = currentBuf
                             }
                         }
 
@@ -533,7 +557,7 @@ object LyricVideoShareUtils {
 
     /**
      * Resolves strictly the selected audio range (startTimeMs to startTimeMs + durationMs)
-     * and applies [audioStyleMode] (Normal, Speed Up, or Slowed + Reverb) if active.
+     * and applies [audioStyleMode] + active 10-band Equalizer & Bass Boost if active.
      */
     suspend fun resolveAudioClip(
         context: Context,
@@ -551,16 +575,20 @@ object LyricVideoShareUtils {
                 .toLong()
                 .coerceAtLeast(1000L)
 
+            val activeParametricEq = EQProfileRepository.loadActiveParametricEQ(context)
+            val eqCacheTag = EQProfileRepository.buildActiveEqCacheTag(context)
+            val needsDspProcessing = audioStyleMode != AudioStyleMode.NORMAL || activeParametricEq != null
+
             val styledClipFile = File(
                 audioDir,
-                "clip_${mediaId}_${startTimeMs}_${durationMs}_${audioStyleMode.name}.m4a"
+                "clip_${mediaId}_${startTimeMs}_${durationMs}_${audioStyleMode.name}_${eqCacheTag}.m4a"
             )
             if (styledClipFile.exists() && isValidAudioFile(styledClipFile)) {
                 Timber.tag(TAG).d("Reusing existing valid styled audio clip: ${styledClipFile.absolutePath}")
                 return@withLock styledClipFile
             }
 
-            val rawClipFile = if (audioStyleMode == AudioStyleMode.NORMAL) {
+            val rawClipFile = if (!needsDspProcessing) {
                 styledClipFile
             } else {
                 File(audioDir, "clip_${mediaId}_${startTimeMs}_${sourceDurationMs}_RAW.m4a")
@@ -680,24 +708,36 @@ object LyricVideoShareUtils {
                 }
             }
 
-            if (audioStyleMode == AudioStyleMode.NORMAL) {
+            if (!needsDspProcessing) {
                 return@withLock rawClipFile
             }
 
-            onProgress?.invoke("Menerapkan efek ${audioStyleMode.label}...", 0.18f)
+            val eqSummary = EQProfileRepository.getActiveEqSummaryLabel(context)
+            val effectLabel = buildString {
+                if (audioStyleMode != AudioStyleMode.NORMAL) {
+                    append(audioStyleMode.label)
+                }
+                if (!eqSummary.isNullOrBlank()) {
+                    if (isNotEmpty()) append(" + ")
+                    append(eqSummary)
+                }
+            }.ifBlank { audioStyleMode.label }
+
+            onProgress?.invoke("Menerapkan efek $effectLabel...", 0.18f)
             val styleApplied = transcodeAudioToAac(
                 sourceFile = rawClipFile,
                 targetFile = styledClipFile,
                 startTimeMs = 0L,
                 durationMs = sourceDurationMs + 2000L,
-                audioStyleMode = audioStyleMode
+                audioStyleMode = audioStyleMode,
+                parametricEQ = activeParametricEq
             )
             if (styleApplied && isValidAudioFile(styledClipFile)) {
-                Timber.tag(TAG).d("Styled audio clip (${audioStyleMode.label}) ready: ${styledClipFile.length()} bytes")
+                Timber.tag(TAG).d("Styled audio clip ($effectLabel) ready: ${styledClipFile.length()} bytes")
                 return@withLock styledClipFile
             }
 
-            Timber.tag(TAG).w("Styled transcode fallback to raw clip for ${audioStyleMode.label}")
+            Timber.tag(TAG).w("Styled transcode fallback to raw clip for $effectLabel")
             rawClipFile
         }
     }
@@ -708,8 +748,11 @@ object LyricVideoShareUtils {
                 .setCache(cache)
                 .createDataSource()
 
-            val dataSpec = DataSpec.Builder().setKey(key).build()
-            val totalBytes = dataSource.open(dataSpec)
+            val dataSpec = DataSpec.Builder()
+                .setUri(Uri.parse("cache://$key"))
+                .setKey(key)
+                .build()
+            dataSource.open(dataSpec)
 
             FileOutputStream(destFile).use { output ->
                 val buffer = ByteArray(32 * 1024)
@@ -750,7 +793,7 @@ object LyricVideoShareUtils {
 
     /**
      * Generates a complete lyric video file, automatically applying the active [AudioStyleMode]
-     * (Normal, Speed Up, or Slowed + Reverb).
+     * and active 10-band Equalizer + Bass Boost.
      */
     suspend fun generateLyricVideo(
         context: Context,
@@ -775,7 +818,14 @@ object LyricVideoShareUtils {
                 runCatching { AudioStyleMode.valueOf(it) }.getOrNull()
             } ?: AudioStyleMode.NORMAL
 
-            onProgress("Menyiapkan segmen audio (${effectiveAudioStyle.label})...", 0.05f)
+            val eqSummary = EQProfileRepository.getActiveEqSummaryLabel(context)
+            val audioBadge = if (!eqSummary.isNullOrBlank()) {
+                "${effectiveAudioStyle.label} • $eqSummary"
+            } else {
+                effectiveAudioStyle.label
+            }
+
+            onProgress("Menyiapkan segmen audio ($audioBadge)...", 0.05f)
             val audioFile = resolveAudioClip(
                 context = context,
                 mediaId = mediaMetadata.id,

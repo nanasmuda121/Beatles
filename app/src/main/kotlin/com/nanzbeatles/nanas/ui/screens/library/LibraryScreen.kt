@@ -77,6 +77,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
+import com.nanzbeatles.nanas.ui.utils.frostedGlassSurface
+import com.nanzbeatles.nanas.ui.utils.liquidGlassPill
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -727,14 +729,10 @@ private fun FrostedSegmentedTabBar(
     modifier: Modifier = Modifier,
 ) {
     val containerShape = CircleShape
-    val containerBg = if (isDark) Color(0xFF141518) else Color(0xFFF0F1F5)
-    val borderColor = if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.08f)
 
     Box(
         modifier = modifier
-            .clip(containerShape)
-            .background(containerBg, containerShape)
-            .border(1.dp, borderColor, containerShape)
+            .frostedGlassSurface(shape = containerShape, isHighlighted = true)
             .padding(5.dp)
     ) {
         Row(
@@ -744,25 +742,16 @@ private fun FrostedSegmentedTabBar(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            val activePillColor = if (isDark) Color.White else Color(0xFF0A0C10)
-            val activeTextColor = if (isDark) Color.Black else Color.White
             PustakaTab.entries.forEach { tab ->
                 val isSelected = selectedTab == tab
-                val pillBg by animateColorAsState(
-                    targetValue = if (isSelected) {
-                        activePillColor
-                    } else {
-                        Color.Transparent
-                    },
-                    animationSpec = tween(200),
-                    label = "tabPillBg"
+                val defaultActiveTextColor = if (isDark) Color(0xFF63B3FF) else Color(0xFF0B65C6)
+                val targetContentColor = com.nanzbeatles.nanas.ui.utils.editorialPillContentColor(
+                    isSelected = isSelected,
+                    defaultColor = if (isSelected) defaultActiveTextColor else if (isDark) Color(0xFFB4B8C4) else Color(0xFF5A5A5E),
+                    isDark = isDark
                 )
                 val contentColor by animateColorAsState(
-                    targetValue = if (isSelected) {
-                        activeTextColor
-                    } else {
-                        if (isDark) Color(0xFF9E9E9E) else Color(0xFF5A5A5E)
-                    },
+                    targetValue = targetContentColor,
                     animationSpec = tween(200),
                     label = "tabContentColor"
                 )
@@ -771,8 +760,17 @@ private fun FrostedSegmentedTabBar(
 
                 Box(
                     modifier = Modifier
-                        .clip(CircleShape)
-                        .background(pillBg, CircleShape)
+                        .then(
+                            if (isSelected) {
+                                Modifier.liquidGlassPill(
+                                    isSelected = true,
+                                    shape = CircleShape,
+                                    accentColor = Color(0xFF1E90FF)
+                                )
+                            } else {
+                                Modifier.clip(CircleShape)
+                            }
+                        )
                         .clickable(
                             interactionSource = interactionSource,
                             indication = ripple(bounded = true, color = contentColor),
@@ -817,16 +815,12 @@ private fun CreateNewPlaylistGlassButton(
     modifier: Modifier = Modifier,
 ) {
     val shape = RoundedCornerShape(16.dp)
-    val bgColor = if (isDark) Color(0xFF15161A) else Color(0xFFF2F3F7)
-    val borderColor = if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.08f)
 
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(54.dp)
-            .clip(shape)
-            .background(bgColor, shape)
-            .border(1.dp, borderColor, shape)
+            .frostedGlassSurface(shape = shape, isHighlighted = true)
             .clickable(onClick = onClick)
             .testTag("create_playlist_glass_button"),
         contentAlignment = Alignment.Center
@@ -849,16 +843,12 @@ private fun ImportSpotifyPlaylistGlassButton(
 ) {
     val spotifyGreen = Color(0xFF1DB954)
     val shape = RoundedCornerShape(16.dp)
-    val bgColor = if (isDark) Color(0xFF15161A) else Color(0xFFF2F3F7)
-    val borderColor = if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.08f)
 
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(54.dp)
-            .clip(shape)
-            .background(bgColor, shape)
-            .border(1.dp, borderColor, shape)
+            .frostedGlassSurface(shape = shape, isHighlighted = true)
             .clickable(onClick = onClick)
             .testTag("import_spotify_playlist_glass_button"),
         contentAlignment = Alignment.Center
@@ -895,15 +885,11 @@ private fun FrostedEmptyStateCard(
     modifier: Modifier = Modifier,
 ) {
     val shape = RoundedCornerShape(22.dp)
-    val bgColor = if (isDark) Color(0xFF141518) else Color(0xFFF2F3F7)
-    val borderColor = if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.08f)
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .clip(shape)
-            .background(bgColor, shape)
-            .border(1.dp, borderColor, shape),
+            .frostedGlassSurface(shape = shape, isHighlighted = false),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -948,6 +934,11 @@ private fun FrostedQueueActionBar(
     isDark: Boolean,
     isGlass: Boolean,
 ) {
+    val playTextColor = com.nanzbeatles.nanas.ui.utils.editorialPillContentColor(
+        isSelected = true,
+        defaultColor = if (isDark) Color(0xFF63B3FF) else Color(0xFF0B65C6),
+        isDark = isDark
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -968,16 +959,7 @@ private fun FrostedQueueActionBar(
         ) {
             Box(
                 modifier = Modifier
-                    .clip(CircleShape)
-                    .background(
-                        if (isDark) Color(0xFF1A1B1F) else Color(0xFFEAEAEF),
-                        CircleShape
-                    )
-                    .border(
-                        1.dp,
-                        if (isDark) Color.White.copy(alpha = 0.10f) else Color.Black.copy(alpha = 0.08f),
-                        CircleShape
-                    )
+                    .liquidGlassPill(isSelected = false, shape = CircleShape)
                     .clickable(onClick = onShuffle)
                     .padding(horizontal = 14.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center
@@ -1001,10 +983,10 @@ private fun FrostedQueueActionBar(
 
             Box(
                 modifier = Modifier
-                    .clip(CircleShape)
-                    .background(
-                        if (isDark) Color.White else Color.Black,
-                        CircleShape
+                    .liquidGlassPill(
+                        isSelected = true,
+                        shape = CircleShape,
+                        accentColor = Color(0xFF1E90FF)
                     )
                     .clickable(onClick = onPlayAll)
                     .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -1014,13 +996,13 @@ private fun FrostedQueueActionBar(
                     Icon(
                         painter = painterResource(R.drawable.play),
                         contentDescription = null,
-                        tint = if (isDark) Color.Black else Color.White,
+                        tint = playTextColor,
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "Putar",
-                        color = if (isDark) Color.Black else Color.White,
+                        color = playTextColor,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -1037,14 +1019,10 @@ private fun FrostedItemSurface(
     content: @Composable () -> Unit,
 ) {
     val shape = RoundedCornerShape(14.dp)
-    val bgColor = if (isDark) Color(0xFF141518) else Color(0xFFF2F3F7)
-    val borderColor = if (isDark) Color.White.copy(alpha = 0.06f) else Color.Black.copy(alpha = 0.06f)
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(shape)
-            .background(bgColor, shape)
-            .border(0.8.dp, borderColor, shape)
+            .frostedGlassSurface(shape = shape, isHighlighted = false)
     ) {
         content()
     }

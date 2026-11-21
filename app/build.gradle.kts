@@ -13,6 +13,7 @@ plugins {
     alias(libs.plugins.kotlin.ksp)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.secrets)
 }
 
 
@@ -25,8 +26,8 @@ android {
         applicationId = "com.nanzbeatles.nanas"
         minSdk = 23
         targetSdk = 36
-        versionCode = 312
-        versionName = "3.1.2"
+        versionCode = 313
+        versionName = "3.1.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -309,6 +310,12 @@ android {
     }
 }
 
+secrets {
+    propertiesFileName = ".env"
+    defaultPropertiesFileName = ".env.example"
+    ignoreList.add("FIREBASE_APPCHECK_DEBUG_TOKEN")
+}
+
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
 }
@@ -345,6 +352,8 @@ dependencies {
     implementation(libs.material3)
     implementation("androidx.compose.material:material-icons-extended:1.6.8")
     implementation(libs.palette)
+    // Poster Musik Favorit: hapus background foto orang (model dibundel, offline)
+    implementation(libs.mlkit.selfie.segmentation)
     implementation(libs.materialKolor)
 
     implementation(libs.appcompat)

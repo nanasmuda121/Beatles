@@ -44,36 +44,48 @@ class ExoDownloadService : DownloadService(
 
     override fun getDownloadManager() = downloadUtil.downloadManager
 
-    override fun getScheduler(): Scheduler = PlatformScheduler(this, JOB_ID)
+    override fun getScheduler(): Scheduler? = runCatching {
+        PlatformScheduler(this, JOB_ID)
+    }.getOrNull()
 
     override fun getForegroundNotification(
         downloads: MutableList<Download>,
         notMetRequirements: Int
-    ): Notification =
-        Notification.Builder.recoverBuilder(
-            this, downloadUtil.downloadNotificationHelper.buildProgressNotification(
-                this,
-                R.drawable.download,
-                null,
-                if (downloads.size == 1) Util.fromUtf8Bytes(downloads[0].request.data)
-                else resources.getQuantityString(R.plurals.n_song, downloads.size, downloads.size),
-                downloads,
-                notMetRequirements
-            )
-        ).addAction(
-            Notification.Action.Builder(
-                Icon.createWithResource(this, R.drawable.close),
-                getString(android.R.string.cancel),
-                PendingIntent.getService(
-                    this,
-                    0,
-                    Intent(this, ExoDownloadService::class.java).setAction(
-                        REMOVE_ALL_PENDING_DOWNLOADS
-                    ),
-                    PendingIntent.FLAG_IMMUTABLE
-                )
+    ): Notification {
+        val message = when {
+            downloads.size == 1 -> {
+                val data = downloads[0].request.data
+                if (data.isNotEmpty()) Util.fromUtf8Bytes(data) else getString(R.string.downloading)
+            }
+            downloads.isNotEmpty() -> {
+                resources.getQuantityString(R.plurals.n_song, downloads.size, downloads.size)
+            }
+            else -> getString(R.string.downloading)
+        }
+        val baseNotification = downloadUtil.downloadNotificationHelper.buildProgressNotification(
+            this,
+            R.drawable.download,
+            null,
+            message,
+            downloads,
+            notMetRequirements
+        )
+        return Notification.Builder.recoverBuilder(this, baseNotification)
+            .addAction(
+                Notification.Action.Builder(
+                    Icon.createWithResource(this, R.drawable.close),
+                    getString(android.R.string.cancel),
+                    PendingIntent.getService(
+                        this,
+                        0,
+                        Intent(this, ExoDownloadService::class.java).setAction(
+                            REMOVE_ALL_PENDING_DOWNLOADS
+                        ),
+                        PendingIntent.FLAG_IMMUTABLE
+                    )
+                ).build()
             ).build()
-        ).build()
+    }
 
 
     /**

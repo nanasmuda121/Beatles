@@ -864,58 +864,31 @@ private fun NewMiniPlayer(
                 )
         ) {
             if (liquidGlassEnabled) {
-                // 3D Liquid Glass blurred backdrop with refractive album artwork & caustic sheen
+                // Lightweight Liquid Glass V2 smoked translucent backdrop with silver-blue & cyan caustic sheen
                 Box(
                     modifier = Modifier
                         .matchParentSize()
                         .clip(RoundedCornerShape(miniPlayerCornerRadius.dp))
-                ) {
-                    mediaMetadata?.let { meta ->
-                        val resolvedGlassThumb = remember(meta.thumbnailUrl, meta.id) {
-                            resolveArtworkUrl(meta.thumbnailUrl, meta.id)
-                        }
-                        resolvedGlassThumb?.let { thumbUrl ->
-                        AsyncImage(
-                            model = thumbUrl,
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .then(
-                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                        Modifier.blur(liquidGlassBlurRadius.coerceIn(18f, 40f).dp)
-                                    } else {
-                                        Modifier
-                                    }
-                                )
-                                .graphicsLayer { alpha = if (useDarkTheme) 0.28f else 0.18f }
+                        .background(
+                            color = if (useDarkTheme) {
+                                Color(0xFF0F141E).copy(alpha = 0.78f)
+                            } else {
+                                Color(0xFFF3F6FC).copy(alpha = 0.86f)
+                            },
+                            shape = RoundedCornerShape(miniPlayerCornerRadius.dp)
                         )
-                        }
-                    }
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                color = if (useDarkTheme) {
-                                    Color(0xFF0A0D14).copy(alpha = 0.22f)
-                                } else {
-                                    Color(0xFFF3F4F8).copy(alpha = 0.82f)
-                                },
-                                shape = RoundedCornerShape(miniPlayerCornerRadius.dp)
-                            )
-                            .background(
-                                brush = androidx.compose.ui.graphics.Brush.linearGradient(
-                                    listOf(
-                                        if (useDarkTheme) Color.White.copy(alpha = 0.26f) else Color.White.copy(alpha = 0.88f),
-                                        cyanTint.copy(alpha = if (useDarkTheme) 0.14f else 0.10f),
-                                        Color.Transparent,
-                                        accentColor.copy(alpha = if (useDarkTheme) 0.12f else 0.08f)
-                                    )
-                                ),
-                                shape = RoundedCornerShape(miniPlayerCornerRadius.dp)
-                            )
-                    )
-                }
+                        .background(
+                            brush = androidx.compose.ui.graphics.Brush.linearGradient(
+                                listOf(
+                                    if (useDarkTheme) Color.White.copy(alpha = 0.20f) else Color.White.copy(alpha = 0.92f),
+                                    Color(0xFF1E90FF).copy(alpha = if (useDarkTheme) 0.14f else 0.08f),
+                                    Color.Transparent,
+                                    cyanTint.copy(alpha = if (useDarkTheme) 0.12f else 0.06f)
+                                )
+                            ),
+                            shape = RoundedCornerShape(miniPlayerCornerRadius.dp)
+                        )
+                )
             }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -1312,26 +1285,19 @@ private fun LegacyMiniPlayer(
             Box(
                 modifier = Modifier
                     .matchParentSize()
-                    .then(
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                            Modifier.blur(liquidGlassBlurRadius.dp)
-                        } else {
-                            Modifier
-                        }
-                    )
                     .background(
                         color = if (isDark) {
-                            Color(0xFF141418).copy(alpha = 0.62f)
+                            Color(0xFF0F141E).copy(alpha = 0.78f)
                         } else {
-                            Color(0xFFF7F7FA).copy(alpha = 0.80f)
+                            Color(0xFFF3F6FC).copy(alpha = 0.86f)
                         }
                     )
                     .background(
                         brush = androidx.compose.ui.graphics.Brush.linearGradient(
                             listOf(
-                                if (isDark) Color.White.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.85f),
-                                if (isDark) Color.White.copy(alpha = 0.05f) else Color.White.copy(alpha = 0.50f),
-                                if (isDark) Color.White.copy(alpha = 0.10f) else Color.White.copy(alpha = 0.70f)
+                                if (isDark) Color.White.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.90f),
+                                Color(0xFF1E90FF).copy(alpha = if (isDark) 0.12f else 0.08f),
+                                if (isDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.70f)
                             )
                         )
                     )

@@ -96,7 +96,8 @@ class EqualizerService @Inject constructor() {
     private fun applyProfileToProcessor(processor: CustomEqualizerAudioProcessor, profile: SavedEQProfile) {
         val parametricEQ = ParametricEQ(
             preamp = profile.preamp,
-            bands = profile.bands
+            bands = profile.bands,
+            bassBoostDb = profile.bassBoostDb
         )
         processor.applyProfile(parametricEQ)
     }
