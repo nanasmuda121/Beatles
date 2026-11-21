@@ -84,5 +84,6 @@
 -keep class com.nanzbeatles.nanas.db.MusicDatabase { *; }
 
 # ML Kit Selfie Segmentation
--keep class com.google.mlkit.** { *; }
+-keep class com.google.mlkit.vision.segmentation.selfie.** { *; }
+-keep class com.google.mlkit.vision.segmentation.** { *; }
 -dontwarn com.google.mlkit.**

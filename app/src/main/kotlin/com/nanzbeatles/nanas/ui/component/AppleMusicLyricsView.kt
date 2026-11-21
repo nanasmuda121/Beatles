@@ -223,6 +223,7 @@ fun AppleMusicLyricsView(
         onDispose {
             LyricsTranslationHelper.setCompositionActive(false)
             LyricsTranslationHelper.cancelTranslation()
+            LyricsTranslationHelper.resetStatus()
         }
     }
 
@@ -255,6 +256,7 @@ fun AppleMusicLyricsView(
         translateLanguage,
         translationProvider
     ) {
+        LyricsTranslationHelper.resetStatus()
         if (lines.isNotEmpty()) {
             if (!autoTranslateLyrics) {
                 LyricsTranslationHelper.clearTranslations(lines)

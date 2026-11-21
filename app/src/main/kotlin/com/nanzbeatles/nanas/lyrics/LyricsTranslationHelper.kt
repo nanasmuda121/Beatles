@@ -34,6 +34,7 @@ object LyricsTranslationHelper {
     val manualTrigger: SharedFlow<Unit> = _manualTrigger.asSharedFlow()
     
     private var translationJob: Job? = null
+    private var autoDismissJob: Job? = null
     private var isCompositionActive = true
     
     // Cache for translations: key = hash of (lyrics content + mode + language + provider), value = list of translations
@@ -75,6 +76,8 @@ object LyricsTranslationHelper {
     }
     
     fun resetStatus() {
+        autoDismissJob?.cancel()
+        autoDismissJob = null
         _status.value = TranslationStatus.Idle
     }
     
@@ -90,6 +93,17 @@ object LyricsTranslationHelper {
         isCompositionActive = false
         translationJob?.cancel()
         translationJob = null
+        autoDismissJob?.cancel()
+        autoDismissJob = null
+        _status.value = TranslationStatus.Idle
+    }
+
+    private fun scheduleAutoDismiss(delayMs: Long) {
+        autoDismissJob?.cancel()
+        autoDismissJob = CoroutineScope(Dispatchers.Main).launch {
+            delay(delayMs)
+            _status.value = TranslationStatus.Idle
+        }
     }
 
     fun translateLyrics(
@@ -104,6 +118,8 @@ object LyricsTranslationHelper {
         provider: String? = null
     ) {
         translationJob?.cancel()
+        autoDismissJob?.cancel()
+        autoDismissJob = null
         _status.value = TranslationStatus.Translating
         
         // Clear existing translations to indicate re-translation
@@ -169,6 +185,7 @@ object LyricsTranslationHelper {
                                     if (trans.isNotBlank() && !trans.equals(entry.text.trim(), ignoreCase = true)) trans else null
                             }
                             _status.value = TranslationStatus.Success
+                            scheduleAutoDismiss(3000)
                         }
                         translatedLines.size < expectedCount -> {
                             translatedLines.forEachIndexed { idx, translation ->
@@ -180,27 +197,23 @@ object LyricsTranslationHelper {
                                 }
                             }
                             _status.value = TranslationStatus.Success
+                            scheduleAutoDismiss(3000)
                         }
                         else -> {
                             _status.value = TranslationStatus.Error(context.getString(com.nanzbeatles.nanas.R.string.ai_error_unexpected))
+                            scheduleAutoDismiss(4000)
                         }
                     }
-                    
-                    delay(3000)
-                    if (_status.value is TranslationStatus.Success && isCompositionActive) {
-                        _status.value = TranslationStatus.Idle
-                    }
                 }.onFailure { error ->
-                    if (!isCompositionActive) {
-                        return@onFailure
-                    }
                     val errorMessage = error.message ?: context.getString(com.nanzbeatles.nanas.R.string.ai_error_unknown)
                     _status.value = TranslationStatus.Error(errorMessage)
+                    scheduleAutoDismiss(4000)
                 }
             } catch (e: Exception) {
-                if (e !is kotlinx.coroutines.CancellationException && isCompositionActive) {
+                if (e !is kotlinx.coroutines.CancellationException) {
                     val errorMessage = e.message ?: context.getString(com.nanzbeatles.nanas.R.string.ai_error_translation_failed)
                     _status.value = TranslationStatus.Error(errorMessage)
+                    scheduleAutoDismiss(4000)
                 }
             }
         }

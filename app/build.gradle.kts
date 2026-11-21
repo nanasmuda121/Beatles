@@ -26,8 +26,8 @@ android {
         applicationId = "com.nanzbeatles.nanas"
         minSdk = 23
         targetSdk = 36
-        versionCode = 313
-        versionName = "3.1.3"
+        versionCode = 314
+        versionName = "3.1.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -306,6 +306,8 @@ android {
             excludes += "META-INF/notice.txt"
             excludes += "META-INF/ASL2.0"
             excludes += "META-INF/*.kotlin_module"
+            excludes += "META-INF/proguard/**"
+            excludes += "META-INF/*.version"
         }
     }
 }

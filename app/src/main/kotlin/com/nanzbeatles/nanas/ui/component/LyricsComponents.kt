@@ -69,6 +69,7 @@ import com.nanzbeatles.nanas.lyrics.LyricsTranslationHelper
 import com.nanzbeatles.nanas.models.MediaMetadata
 import com.nanzbeatles.nanas.ui.screens.settings.LyricsPosition
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 @Composable
@@ -76,6 +77,20 @@ internal fun LyricsTranslationHeader(
     status: LyricsTranslationHelper.TranslationStatus,
     modifier: Modifier = Modifier
 ) {
+    LaunchedEffect(status) {
+        when (status) {
+            is LyricsTranslationHelper.TranslationStatus.Success -> {
+                delay(3000)
+                LyricsTranslationHelper.resetStatus()
+            }
+            is LyricsTranslationHelper.TranslationStatus.Error -> {
+                delay(4000)
+                LyricsTranslationHelper.resetStatus()
+            }
+            else -> {}
+        }
+    }
+
     AnimatedVisibility(
         visible = status !is LyricsTranslationHelper.TranslationStatus.Idle,
         enter = fadeIn(),
