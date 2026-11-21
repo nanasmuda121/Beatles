@@ -101,16 +101,19 @@ fun PosterCard(card: PosterCardData, widthPx: Float, modifier: Modifier = Modifi
     Column(
         modifier = modifier
             .fillMaxSize()
-            .clip(RoundedCornerShape(dp(0.14f)))
+            .clip(RoundedCornerShape(dp(0.08f)))
             .background(bg)
-            .padding(horizontal = dp(0.055f), vertical = dp(0.050f)),
+            .padding(horizontal = dp(0.055f), vertical = dp(0.048f)),
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Box(
                 modifier = Modifier
-                    .size(dp(0.195f))
-                    .clip(RoundedCornerShape(dp(0.024f)))
+                    .size(dp(0.24f))
+                    .clip(RoundedCornerShape(dp(0.038f)))
                     .background(Color(0x33FFFFFF)),
                 contentAlignment = Alignment.Center,
             ) {
@@ -127,36 +130,37 @@ fun PosterCard(card: PosterCardData, widthPx: Float, modifier: Modifier = Modifi
                         Icons.Rounded.MusicNote,
                         contentDescription = null,
                         tint = textColor.copy(alpha = 0.7f),
-                        modifier = Modifier.size(dp(0.09f)),
+                        modifier = Modifier.size(dp(0.11f)),
                     )
                 }
             }
-            Spacer(Modifier.width(dp(0.042f)))
+            Spacer(Modifier.width(dp(0.036f)))
             Column(Modifier.weight(1f)) {
                 Text(
                     text = card.song.title,
                     color = textColor,
-                    fontSize = sp(0.060f),
-                    fontWeight = FontWeight.Medium,
+                    fontSize = sp(0.055f),
+                    fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(Modifier.height(dp(0.008f)))
+                Spacer(Modifier.height(dp(0.006f)))
                 Text(
                     text = card.song.artist,
-                    color = textColor.copy(alpha = 0.65f),
-                    fontSize = sp(0.048f),
+                    color = textColor.copy(alpha = 0.68f),
+                    fontSize = sp(0.042f),
+                    fontWeight = FontWeight.Normal,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
         }
 
-        Column {
+        Column(modifier = Modifier.fillMaxWidth()) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(dp(0.011f))
+                    .height(dp(0.012f))
                     .clip(RoundedCornerShape(50))
                     .background(textColor.copy(alpha = 0.22f))
             ) {
@@ -165,10 +169,10 @@ fun PosterCard(card: PosterCardData, widthPx: Float, modifier: Modifier = Modifi
                         .fillMaxWidth(card.progress.coerceIn(0.02f, 1f))
                         .fillMaxHeight()
                         .clip(RoundedCornerShape(50))
-                        .background(textColor.copy(alpha = 0.85f))
+                        .background(textColor.copy(alpha = 0.90f))
                 )
             }
-            Spacer(Modifier.height(dp(0.024f)))
+            Spacer(Modifier.height(dp(0.018f)))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -177,13 +181,13 @@ fun PosterCard(card: PosterCardData, widthPx: Float, modifier: Modifier = Modifi
                 Text(
                     text = fmtTime((total * card.progress).roundToInt()),
                     color = textColor,
-                    fontSize = sp(0.046f),
+                    fontSize = sp(0.042f),
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
                     text = fmtTime(total),
                     color = textColor,
-                    fontSize = sp(0.046f),
+                    fontSize = sp(0.042f),
                     fontWeight = FontWeight.Bold,
                 )
             }
@@ -192,7 +196,7 @@ fun PosterCard(card: PosterCardData, widthPx: Float, modifier: Modifier = Modifi
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = dp(0.185f)),
+                .padding(horizontal = dp(0.06f)),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -200,18 +204,18 @@ fun PosterCard(card: PosterCardData, widthPx: Float, modifier: Modifier = Modifi
                 Icons.Rounded.AddCircleOutline,
                 contentDescription = null,
                 tint = textColor,
-                modifier = Modifier.size(dp(0.095f)),
+                modifier = Modifier.size(dp(0.088f)),
             )
             Icon(
                 Icons.Rounded.SkipPrevious,
                 contentDescription = null,
-                tint = textColor.copy(alpha = 0.58f),
-                modifier = Modifier.size(dp(0.095f)),
+                tint = textColor.copy(alpha = 0.88f),
+                modifier = Modifier.size(dp(0.092f)),
             )
             // Ikon Pause 2 batang kapsul tebal persis seperti referensi Mode 1
-            Canvas(Modifier.size(dp(0.092f))) {
-                val barW = size.width * 0.27f
-                val barH = size.height * 0.86f
+            Canvas(Modifier.size(dp(0.088f))) {
+                val barW = size.width * 0.28f
+                val barH = size.height * 0.88f
                 val top = (size.height - barH) / 2f
                 val r = CornerRadius(barW * 0.35f, barW * 0.35f)
                 drawRoundRect(
@@ -222,7 +226,7 @@ fun PosterCard(card: PosterCardData, widthPx: Float, modifier: Modifier = Modifi
                 )
                 drawRoundRect(
                     color = textColor,
-                    topLeft = Offset(size.width * 0.59f, top),
+                    topLeft = Offset(size.width * 0.58f, top),
                     size = Size(barW, barH),
                     cornerRadius = r,
                 )
@@ -230,8 +234,8 @@ fun PosterCard(card: PosterCardData, widthPx: Float, modifier: Modifier = Modifi
             Icon(
                 Icons.Rounded.SkipNext,
                 contentDescription = null,
-                tint = textColor.copy(alpha = 0.58f),
-                modifier = Modifier.size(dp(0.095f)),
+                tint = textColor.copy(alpha = 0.88f),
+                modifier = Modifier.size(dp(0.092f)),
             )
         }
     }
@@ -511,7 +515,7 @@ fun PosterCardVertical(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = dp(0.06f)),
+                            .padding(horizontal = dp(0.04f)),
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -519,29 +523,32 @@ fun PosterCardVertical(
                             Icons.Rounded.FastRewind,
                             contentDescription = null,
                             tint = textColor,
-                            modifier = Modifier.size(dp(0.115f)),
+                            modifier = Modifier.size(dp(0.098f)),
                         )
                         Icon(
                             Icons.Rounded.Pause,
                             contentDescription = null,
                             tint = textColor,
-                            modifier = Modifier.size(dp(0.135f)),
+                            modifier = Modifier.size(dp(0.120f)),
                         )
                         Icon(
                             Icons.Rounded.FastForward,
                             contentDescription = null,
                             tint = textColor,
-                            modifier = Modifier.size(dp(0.115f)),
+                            modifier = Modifier.size(dp(0.098f)),
                         )
                     }
 
-                    // Baris slider volume di bawah
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Baris pengatur volume (VolumeMute - bar slider dengan thumb bulat - VolumeUp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Icon(
                             Icons.Rounded.VolumeMute,
                             contentDescription = null,
                             tint = textColor.copy(alpha = 0.75f),
-                            modifier = Modifier.size(dp(0.056f)),
+                            modifier = Modifier.size(dp(0.052f)),
                         )
                         Canvas(
                             Modifier
@@ -550,7 +557,7 @@ fun PosterCardVertical(
                                 .padding(horizontal = dp(0.018f))
                         ) {
                             val y = size.height / 2f
-                            val stroke = size.height * 0.24f
+                            val stroke = size.height * 0.22f
                             drawLine(
                                 textColor.copy(alpha = 0.28f),
                                 Offset(0f, y),
@@ -558,19 +565,25 @@ fun PosterCardVertical(
                                 stroke,
                                 StrokeCap.Round,
                             )
+                            val volX = size.width * 0.65f
                             drawLine(
-                                textColor.copy(alpha = 0.88f),
+                                textColor.copy(alpha = 0.90f),
                                 Offset(0f, y),
-                                Offset(size.width * 0.64f, y),
+                                Offset(volX, y),
                                 stroke,
                                 StrokeCap.Round,
+                            )
+                            drawCircle(
+                                color = textColor,
+                                radius = size.height * 0.38f,
+                                center = Offset(volX, y),
                             )
                         }
                         Icon(
                             Icons.Rounded.VolumeUp,
                             contentDescription = null,
                             tint = textColor.copy(alpha = 0.75f),
-                            modifier = Modifier.size(dp(0.056f)),
+                            modifier = Modifier.size(dp(0.052f)),
                         )
                     }
                 }

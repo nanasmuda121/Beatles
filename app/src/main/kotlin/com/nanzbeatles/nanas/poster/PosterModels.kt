@@ -130,11 +130,11 @@ data class PosterElement(
 )
 
 object PosterMetrics {
-    const val CARD_W = 0.58f          // Mode 1: lebar kartu = 58% lebar poster (sesuai referensi)
-    const val CARD_ASPECT = 0.552f    // Mode 1: tinggi kartu = 55.2% lebar kartu
-    const val CUTOUT_H = 0.445f       // Mode 1: tinggi dasar cutout = 44.5% lebar poster
-    const val V_CARD_W = 0.35f        // Mode 2: kartu vertikal, lebar 35% lebar poster
-    const val V_CARD_ASPECT = 1.66f   // Mode 2: tinggi kartu = 1.66 x lebar kartu
+    const val CARD_W = 0.63f          // Mode 1: lebar kartu = 63% lebar poster (sesuai referensi 680/1080)
+    const val CARD_ASPECT = 0.66f     // Mode 1: tinggi kartu = 66% lebar kartu (sesuai referensi 460/680)
+    const val CUTOUT_H = 0.45f        // Mode 1: tinggi dasar cutout
+    const val V_CARD_W = 0.40f        // Mode 2: kartu vertikal, lebar 40% lebar poster (sesuai referensi 420-450/1080)
+    const val V_CARD_ASPECT = 1.58f   // Mode 2: tinggi kartu = 1.58 x lebar kartu (sesuai referensi 660/420)
     const val MAX_V_SONGS = 4
     const val MAX_PHOTOS = 3
     const val MAX_BACKGROUNDS = 3

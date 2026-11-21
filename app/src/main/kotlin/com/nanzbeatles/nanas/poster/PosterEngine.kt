@@ -191,29 +191,26 @@ class MlKitSelfieRemover : BackgroundRemover {
         }
 
         return withContext(Dispatchers.Default) {
-            val combined = FloatArray(w * h)
-            val feather = max(6f, min(rw, rh) * 0.04f)
+            val combined = pass1.copyOf()
+            val feather = max(8f, min(rw, rh) * 0.05f)
             for (y in ry0..ry1) {
                 val cy = y - ry0
-                val dyBorder = min(y - ry0, ry1 - y).toFloat()
-                val wy = (dyBorder / feather).coerceIn(0f, 1f)
                 val rowFull = y * w
                 val rowCrop = cy * rw
                 for (x in rx0..rx1) {
                     val cx = x - rx0
-                    val dxBorder = min(x - rx0, rx1 - x).toFloat()
-                    val wx = (dxBorder / feather).coerceIn(0f, 1f)
-                    val wEdge = min(wx, wy)
                     val c1 = pass1[rowFull + x]
                     val c2 = pass2Crop[rowCrop + cx]
-                    // Di dalam ROI karakter: utamakan detail tajam pass2 (82%), namun jika pass1 & pass2
-                    // sama-sama yakin (>0.45), pertahankan agar bagian tubuh tidak putus.
-                    val blended = if (c2 >= 0.55f || c1 >= 0.72f) {
-                        max(c2, c1 * 0.88f)
+                    val isBorder = (x <= rx0 + feather || x >= rx1 - feather || y <= ry0 + feather || y >= ry1 - feather)
+                    val blended = if (!isBorder) {
+                        max(c1, c2)
                     } else {
-                        c2 * 0.82f + c1 * 0.18f
+                        val dxBorder = min(x - rx0, rx1 - x).toFloat()
+                        val dyBorder = min(y - ry0, ry1 - y).toFloat()
+                        val wEdge = (min(dxBorder, dyBorder) / feather).coerceIn(0f, 1f)
+                        c2 * wEdge + c1 * (1f - wEdge)
                     }
-                    combined[rowFull + x] = blended * (0.25f + 0.75f * wEdge)
+                    combined[rowFull + x] = max(c1, blended)
                 }
             }
             combined
@@ -354,8 +351,8 @@ object MaskRefiner {
         val mainSize = comp.sizes[bestLabel]
         for (i in 0 until n) {
             val l = comp.labels[i]
-            // Sertakan komponen utama, atau komponen cukup besar (>12% utama) yang sangat dekat (mis. tangan terpisah sedikit)
-            if (l == bestLabel || (l != 0 && comp.sizes[l] >= mainSize * 0.12f && sumConf[l] / comp.sizes[l] > 0.65f)) {
+            // Sertakan komponen utama, atau komponen cukup besar (>2% utama, mis. tangan/kaki/pose) yang cukup yakin
+            if (l == bestLabel || (l != 0 && comp.sizes[l] >= mainSize * 0.02f && sumConf[l] / comp.sizes[l] > 0.45f)) {
                 val x = i % w
                 val y = i / w
                 if (x < minX) minX = x
@@ -368,8 +365,8 @@ object MaskRefiner {
 
         val bw = maxX - minX + 1
         val bh = maxY - minY + 1
-        val padX = max((bw * 0.16f).toInt(), (w * 0.05f).toInt())
-        val padY = max((bh * 0.14f).toInt(), (h * 0.05f).toInt())
+        val padX = max((bw * 0.20f).toInt(), (w * 0.08f).toInt())
+        val padY = max((bh * 0.18f).toInt(), (h * 0.08f).toInt())
         return intArrayOf(
             max(0, minX - padX),
             max(0, minY - padY),
@@ -503,18 +500,18 @@ object MaskRefiner {
 
                 if (fgBgSep > 0.08f) {
                     val colorAffinity = (dBg / (dFg + dBg + 1e-4f)).coerceIn(0f, 1f)
-                    val sepStrength = ((fgBgSep - 0.08f) / 0.35f).coerceIn(0f, 1f) * 0.48f
+                    val sepStrength = ((fgBgSep - 0.08f) / 0.35f).coerceIn(0f, 1f) * 0.35f
                     var adjusted = c * (1f - sepStrength) + colorAffinity * sepStrength
 
                     // Jika piksel berada di dalam area dominan FG dan warnanya sangat dekat dengan FG,
                     // lindungi supaya baju/tangan karakter tidak ikut terhapus.
-                    if (c >= 0.32f && dFg < 0.14f && dBg > dFg * 1.65f) {
-                        adjusted = max(adjusted, (c + 0.24f).coerceAtMost(0.95f))
+                    if (c >= 0.30f && dFg < 0.18f && dBg > dFg * 1.4f) {
+                        adjusted = max(adjusted, (c + 0.25f).coerceAtMost(0.98f))
                     }
                     // Jika piksel berada di pinggir luar dan warnanya sangat mirip objek background,
-                    // tekan supaya objek sekitar karakter terhapus bersih.
-                    if (c <= 0.65f && dBg < 0.13f && dFg > dBg * 1.60f) {
-                        adjusted = min(adjusted, (c - 0.26f).coerceAtLeast(0.0f))
+                    // tekan supaya objek sekitar karakter terhapus bersih (hanya jika confidence awal memang rendah).
+                    if (c <= 0.40f && dBg < 0.12f && dFg > dBg * 1.80f) {
+                        adjusted = min(adjusted, (c - 0.20f).coerceAtLeast(0.0f))
                     }
                     out[i] = adjusted.coerceIn(0f, 1f)
                 } else {
@@ -628,9 +625,10 @@ object MaskRefiner {
         val mainStrong = strongCount[mainLabel]
         val keepBridge = BooleanArray(bridgeComp.sizes.size)
         for (l in 1 until bridgeComp.sizes.size) {
-            // Simpan komponen karakter utama; buang pulau/objek lain di sekitar kecuali bagian besar yang sangat yakin
+            // Simpan komponen karakter utama; buang pulau di luar kecuali tangan/kaki atau menyentuh tepi bawah/samping
             keepBridge[l] = (l == mainLabel) ||
-                (strongCount[l] >= mainStrong * 0.18f && strongCount[l].toFloat() / bridgeComp.sizes[l] > 0.72f)
+                (strongCount[l] >= mainStrong * 0.03f && strongCount[l].toFloat() / bridgeComp.sizes[l] > 0.40f) ||
+                (bridgeComp.border[l] && strongCount[l] >= 40)
         }
 
         val keptMask = FloatArray(n) {
@@ -657,14 +655,14 @@ object MaskRefiner {
             }
         }
 
-        // 3. Tutup lubang di dalam tubuh/pakaian karakter (hingga 3.5% luas gambar, mis. logo baju, sabuk, bayangan)
-        val bg = BooleanArray(n) { alpha[it] <= 0.55f }
+        // 3. Tutup lubang di dalam tubuh/pakaian karakter (hingga 10% luas gambar, mis. baju gelap, logo baju, sabuk, bayangan)
+        val bg = BooleanArray(n) { alpha[it] <= 0.48f }
         val bgComp = label(bg, w, h)
-        val maxHole = (n * 0.035f).toInt()
+        val maxHole = (n * 0.10f).toInt()
         for (i in 0 until n) {
             val l = bgComp.labels[i]
             if (l != 0 && !bgComp.touchesBorder[l] && bgComp.sizes[l] <= maxHole) {
-                alpha[i] = max(alpha[i], 0.96f)
+                alpha[i] = max(alpha[i], 0.98f)
             }
         }
     }
@@ -679,8 +677,8 @@ object MaskRefiner {
         // 1. Koreksi confidence dengan afinitas warna lokal (FG vs BG)
         val colorAdjusted = applyLocalColorAffinity(rCh, gCh, bCh, confidence, w, h)
 
-        // 2. Kontraskan kurva awal sebelum guided filter
-        val p = FloatArray(n) { smoothstep(0.16f, 0.82f, colorAdjusted[it]) }
+        // 2. Kontraskan kurva awal sebelum guided filter (ambang 0.12f - 0.70f agar baju & anggota badan solid)
+        val p = FloatArray(n) { smoothstep(0.12f, 0.70f, colorAdjusted[it]) }
 
         // 3. Multi-channel Color Guided Filter agar tepi mengikuti batas warna asli
         val r = (max(w, h) / 210).coerceIn(3, 7)
