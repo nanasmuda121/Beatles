@@ -24,17 +24,17 @@ import coil3.ImageLoader
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
 import coil3.toBitmap
+import com.nanzbeatles.innertube.YouTube
+import com.nanzbeatles.innertube.utils.completed
 import com.nanzbeatles.nanas.db.MusicDatabase
-import com.nanzbeatles.nanas.db.entities.Song
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -56,7 +56,7 @@ sealed interface PosterSaveResult {
 @HiltViewModel
 class PosterViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    database: MusicDatabase,
+    private val database: MusicDatabase,
 ) : ViewModel() {
 
     // ------------------------------------------------------------------ navigasi wizard
@@ -106,6 +106,9 @@ class PosterViewModel @Inject constructor(
             layoutSignature = ""
             historyVersion++
         }
+        // Mode 2 dikunci ke aspek potrait 9:16 seperti referensi; Mode 1 default ke proporsi poster referensi Mode 1
+        aspect = if (value == PosterMode.PHOTO3D) PosterAspect.STORY else PosterAspect.COLLAGE
+        loadPlaylistSongsIfNeeded()
         step = PosterStep.SONGS
     }
 
@@ -116,17 +119,59 @@ class PosterViewModel @Inject constructor(
     val effectiveBgMode: BackgroundMode
         get() = if (mode == PosterMode.PHOTO3D) BackgroundMode.PHOTO else bgMode
 
-    // ------------------------------------------------------------------ lagu
-    val allSongs: StateFlow<List<PosterSong>> = database.allSongs()
-        .map { list ->
-            list.asSequence()
-                .filter { !it.song.isVideo }
-                .map { it.toPosterSong() }
-                .sortedBy { it.title.lowercase() }
-                .toList()
+    // ------------------------------------------------------------------ lagu dari daftar putar (playlist)
+    var playlistName by mutableStateOf(PosterSession.playlistName)
+        private set
+    var playlistLoading by mutableStateOf(false)
+        private set
+
+    private val _playlistSongs = MutableStateFlow<List<PosterSong>>(PosterSession.songs)
+    val playlistSongs: StateFlow<List<PosterSong>> = _playlistSongs.asStateFlow()
+
+    private var loadedSessionVersion = -1
+
+    init {
+        loadPlaylistSongsIfNeeded()
+    }
+
+    fun loadPlaylistSongsIfNeeded() {
+        val ver = PosterSession.sessionVersion
+        if (ver == loadedSessionVersion && _playlistSongs.value.isNotEmpty()) return
+        loadedSessionVersion = ver
+        playlistName = PosterSession.playlistName.ifBlank { "Daftar Putar" }
+
+        val initial = PosterSession.songs
+        if (initial.isNotEmpty()) {
+            _playlistSongs.value = initial
+            return
         }
-        .flowOn(Dispatchers.Default)
-        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+        val pid = PosterSession.playlistId
+        val bid = PosterSession.browseId
+        playlistLoading = true
+        viewModelScope.launch {
+            val loaded = withContext(Dispatchers.IO) {
+                var list = emptyList<PosterSong>()
+                if (!pid.isNullOrBlank()) {
+                    val dbSongs = database.playlistSongs(pid).firstOrNull().orEmpty()
+                    list = dbSongs
+                        .filter { !it.song.song.isVideo }
+                        .map { it.song.toPosterSong() }
+                }
+                if (list.isEmpty() && !bid.isNullOrBlank()) {
+                    val ytSongs = YouTube.playlist(bid.removePrefix("VL")).completed().getOrNull()?.songs.orEmpty()
+                    list = ytSongs.map { it.toPosterSong() }
+                }
+                if (list.isEmpty()) {
+                    val all = database.allSongs().firstOrNull().orEmpty()
+                    list = all.filter { !it.song.isVideo }.map { it.toPosterSong() }
+                }
+                list
+            }
+            _playlistSongs.value = loaded
+            playlistLoading = false
+        }
+    }
 
     val selectedSongs = mutableStateListOf<PosterSong>()
 
@@ -144,13 +189,13 @@ class PosterViewModel @Inject constructor(
     var cardsLoading by mutableStateOf(false)
         private set
 
-    /** Muat cover + warna kartu untuk 3 lagu terpilih, lalu lanjut ke langkah foto. */
+    /** Muat cover + warna kartu untuk lagu terpilih dari daftar putar, lalu lanjut ke langkah foto. */
     fun confirmSongs() {
         if (selectedSongs.size !in minSongs..maxSongs) return
         val songs = selectedSongs.toList()
         cardsLoading = true
         viewModelScope.launch {
-            val defaults = if (mode == PosterMode.PHOTO3D) floatArrayOf(0.55f, 0.45f, 0.78f, 0.2f)
+            val defaults = if (mode == PosterMode.PHOTO3D) floatArrayOf(0.38f, 0.44f, 0.68f, 0.30f)
             else floatArrayOf(0.08f, 0.06f, 0.82f)
             val vertical = mode == PosterMode.PHOTO3D
             val built = withContext(Dispatchers.IO) {
@@ -159,7 +204,7 @@ class PosterViewModel @Inject constructor(
                     PosterCardData(
                         song = s,
                         cover = cover,
-                        autoColor = if (vertical) 0xFF2C2C2F.toInt() else PosterColors.autoCardColor(cover),
+                        autoColor = if (vertical) 0xFF23252A.toInt() else PosterColors.autoCardColor(cover),
                         progress = defaults[i % defaults.size],
                     )
                 }
@@ -196,11 +241,14 @@ class PosterViewModel @Inject constructor(
     // ------------------------------------------------------------------ foto orang + cutout
     val photos = mutableStateListOf<PhotoSlot>()
     var currentPhoto by mutableIntStateOf(0)
+    var photoValidationMessage by mutableStateOf<String?>(null)
+        private set
 
     private val remover: BackgroundRemover = MlKitSelfieRemover()
     private val processMutex = Mutex()
 
     fun addPhotos(uris: List<Uri>) {
+        photoValidationMessage = null
         val room = maxPhotos - photos.size
         uris.take(room.coerceAtLeast(0)).forEach { uri ->
             val slot = PhotoSlot(UUID.randomUUID().toString(), uri)
@@ -223,6 +271,13 @@ class PosterViewModel @Inject constructor(
             processMutex.withLock {
                 try {
                     val original = PosterImageLoader.decode(context, slot.uri, 1280)
+                    // Mode 2 hanya tersedia untuk gambar potrait (vertikal) sesuai permintaan user
+                    if (mode == PosterMode.PHOTO3D && original.width >= original.height) {
+                        original.recycle()
+                        photos.remove(slot)
+                        photoValidationMessage = "Template Mode 2 hanya tersedia untuk gambar potrait (vertikal). Silakan pilih foto potrait."
+                        return@withLock
+                    }
                     slot.original = original
                     try {
                         slot.editor = CutoutEditor.create(original, remover)
@@ -269,7 +324,7 @@ class PosterViewModel @Inject constructor(
 
     // ------------------------------------------------------------------ background
     var bgMode by mutableStateOf(BackgroundMode.PHOTO)
-    var bgBlur by mutableFloatStateOf(0.65f)
+    var bgBlur by mutableFloatStateOf(0.72f)
     var solidColor by mutableIntStateOf(SOLID_BG_PRESETS[0])
     var gradientIndex by mutableIntStateOf(0)
 
@@ -329,6 +384,9 @@ class PosterViewModel @Inject constructor(
         bgMode != BackgroundMode.PHOTO || bgRaw.isNotEmpty()
 
     fun enterEditor() {
+        if (mode == PosterMode.PHOTO3D) {
+            aspect = PosterAspect.STORY
+        }
         val sig = "$mode|$bgMode|${bgBlurred.size}|${readyPhotos.size}|${cards.joinToString(",") { it.song.id }}"
         if (elements.isEmpty() || sig != layoutSignature) {
             buildDefaultLayout()
@@ -338,7 +396,7 @@ class PosterViewModel @Inject constructor(
     }
 
     // ------------------------------------------------------------------ editor: elemen & layer
-    var aspect by mutableStateOf(PosterAspect.STORY)
+    var aspect by mutableStateOf(PosterAspect.COLLAGE)
     var elements by mutableStateOf<List<PosterElement>>(emptyList())
         private set
     var selectedId by mutableStateOf<String?>(null)
@@ -394,7 +452,7 @@ class PosterViewModel @Inject constructor(
     /** Daftar bitmap cutout per indeks foto (Mode 2: ukuran penuh atau null). */
     val cutoutBitmaps: List<Bitmap?> get() = readyPhotos.map { it.finalBitmap }
 
-    /** Tata letak default zig-zag seperti referensi. */
+    /** Tata letak default zig-zag Mode 1 (100% mirip referensi Mode 1). */
     fun buildDefaultLayout() {
         if (mode == PosterMode.PHOTO3D) {
             buildPhoto3dLayout()
@@ -419,7 +477,8 @@ class PosterViewModel @Inject constructor(
             }
         }
         val cardH = PosterMetrics.CARD_W * PosterMetrics.CARD_ASPECT
-        val cardSlots = listOf(0.56f to 0.20f, 0.40f to 0.50f, 0.56f to 0.80f)
+        // Koordinat zig-zag persis sesuai referensi Mode 1: kanan-atas, kiri-tengah, kanan-bawah
+        val cardSlots = listOf(0.54f to 0.217f, 0.35f to 0.515f, 0.54f to 0.815f)
         val cutCount = readyPhotos.size
         cards.forEachIndexed { i, _ ->
             val (cx, cy) = cardSlots[i % cardSlots.size]
@@ -437,12 +496,12 @@ class PosterViewModel @Inject constructor(
                     id = "probe", kind = ElementKind.CUTOUT, refIndex = i, cx = 0f, cy = 0f
                 )
                 val (cutW, cutH) = baseSize(probe, 1f, canvasH)
-                // dasar cutout sejajar tepi bawah kartu, kepala keluar dari atas kartu
+                // Dasar cutout rata dengan tepi bawah kartu, kepala menonjol keluar dari atas kartu
                 val cardBottom = cy * canvasH + cardH / 2f
                 val cutCenterY = (cardBottom - cutH / 2f) / canvasH
                 val lo = cutW / 2f
                 val hi = 1f - cutW / 2f
-                val rawX = cx + PosterMetrics.CARD_W / 2f - cutW / 2f - 0.02f
+                val rawX = cx + 0.118f
                 val cutCenterX = if (lo <= hi) rawX.coerceIn(lo, hi) else 0.5f
                 list.add(
                     PosterElement(
@@ -462,8 +521,12 @@ class PosterViewModel @Inject constructor(
         historyVersion++
     }
 
-    /** Mode 2: foto penuh sebagai background, kartu vertikal miring 3D di sekeliling, cutout diri di depan kartu. */
+    /**
+     * Mode 2: foto potrait penuh sebagai background, 4 kartu vertikal miring perspektif 3D menghadap
+     * ke subjek di tengah, dan cutout subjek berdiri di depan kartu (100% mirip referensi Mode 2).
+     */
     private fun buildPhoto3dLayout() {
+        aspect = PosterAspect.STORY
         val list = ArrayList<PosterElement>()
         val hasPhoto = readyPhotos.firstOrNull()?.original != null
         if (hasPhoto) {
@@ -479,12 +542,12 @@ class PosterViewModel @Inject constructor(
                 )
             )
         }
-        // posisi, kemiringan mengikuti referensi: kiri-atas, kanan-atas, kiri-bawah, kanan-bawah
+        // [cx, cy, rotationZ, rotY (perspektif kiri/kanan menghadap tengah), rotX, sparkleStyle]
         val slots = listOf(
-            floatArrayOf(0.21f, 0.24f, -5f, -10f),
-            floatArrayOf(0.78f, 0.245f, 5f, 10f),
-            floatArrayOf(0.20f, 0.70f, 7f, -10f),
-            floatArrayOf(0.82f, 0.67f, 6f, 10f),
+            floatArrayOf(0.21f, 0.24f, -5f, 16f, -3f, 0f),   // Kiri-atas (Night Changes)
+            floatArrayOf(0.77f, 0.25f, 5f, -16f, -3f, 2f),   // Kanan-atas (Rewrite The Stars)
+            floatArrayOf(0.205f, 0.70f, 4f, 18f, 4f, 1f),    // Kiri-bawah (Rude)
+            floatArrayOf(0.82f, 0.66f, -4f, -18f, 4f, 0f),   // Kanan-bawah (Mr. Loverman)
         )
         cards.forEachIndexed { i, _ ->
             val s = slots[i % slots.size]
@@ -497,7 +560,8 @@ class PosterViewModel @Inject constructor(
                     cy = s[1],
                     rotation = s[2],
                     rotY = s[3],
-                    rotX = 4f,
+                    rotX = s[4],
+                    sparkleStyle = s[5].toInt(),
                 )
             )
         }
@@ -531,6 +595,10 @@ class PosterViewModel @Inject constructor(
     }
 
     fun changeAspect(value: PosterAspect) {
+        if (mode == PosterMode.PHOTO3D) {
+            aspect = PosterAspect.STORY
+            return
+        }
         aspect = value
     }
 
@@ -623,7 +691,6 @@ class PosterViewModel @Inject constructor(
                 val bx: Int
                 val by: Int
                 if (el.fill) {
-                    // ContentScale.Crop: skala memenuhi kotak, bagian lebih terpotong di tengah
                     val sc = max(bw / bmp.width, bh / bmp.height)
                     bx = (((lx + bw / 2f) - (bw - bmp.width * sc) / 2f) / sc).toInt().coerceIn(0, bmp.width - 1)
                     by = (((ly + bh / 2f) - (bh - bmp.height * sc) / 2f) / sc).toInt().coerceIn(0, bmp.height - 1)
@@ -655,7 +722,7 @@ class PosterViewModel @Inject constructor(
         } else {
             var h = cw * PosterMetrics.CUTOUT_H
             var w = h / cutoutAspect(el.refIndex)
-            val maxW = cw * 0.8f
+            val maxW = cw * 0.72f
             if (w > maxW) {
                 val f = maxW / w
                 w *= f
@@ -743,12 +810,4 @@ class PosterViewModel @Inject constructor(
         remover.close()
         super.onCleared()
     }
-
-    private fun Song.toPosterSong() = PosterSong(
-        id = song.id,
-        title = song.title,
-        artist = artists.joinToString(", ") { it.name }.ifBlank { "Artis tidak diketahui" },
-        durationSec = song.duration.takeIf { it > 0 } ?: 200,
-        thumbnailUrl = song.thumbnailUrl,
-    )
 }

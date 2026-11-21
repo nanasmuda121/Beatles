@@ -11,6 +11,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.palette.graphics.Palette
+import com.nanzbeatles.innertube.models.SongItem
+import com.nanzbeatles.nanas.db.entities.Song
 import kotlin.math.max
 import kotlin.math.min
 
@@ -20,6 +22,7 @@ enum class PosterMode { COLLAGE, PHOTO3D }
 
 enum class PosterAspect(val label: String, val ratio: Float) {
     STORY("9:16", 9f / 16f),
+    COLLAGE("Poster", 1080f / 1526f),
     PORTRAIT("4:5", 4f / 5f),
     SQUARE("1:1", 1f),
 }
@@ -38,6 +41,54 @@ data class PosterSong(
     val durationSec: Int,
     val thumbnailUrl: String?,
 )
+
+fun Song.toPosterSong() = PosterSong(
+    id = song.id,
+    title = song.title,
+    artist = artists.joinToString(", ") { it.name }.ifBlank { "Artis tidak diketahui" },
+    durationSec = song.duration.takeIf { it > 0 } ?: 200,
+    thumbnailUrl = song.thumbnailUrl,
+)
+
+fun SongItem.toPosterSong() = PosterSong(
+    id = id,
+    title = title,
+    artist = artists.joinToString(", ") { it.name }.ifBlank { "Artis tidak diketahui" },
+    durationSec = duration?.takeIf { it > 0 } ?: 200,
+    thumbnailUrl = thumbnail,
+)
+
+/**
+ * Menyimpan konteks daftar putar (playlist) yang dipilih user saat menekan titik 3 -> "Buat Poster".
+ */
+object PosterSession {
+    var playlistName: String = ""
+        private set
+    var playlistId: String? = null
+        private set
+    var browseId: String? = null
+        private set
+    var songs: List<PosterSong> = emptyList()
+        private set
+    var sessionVersion: Int = 0
+        private set
+
+    var navigateCallback: (() -> Unit)? = null
+
+    fun openFromPlaylist(
+        name: String,
+        songs: List<PosterSong>,
+        playlistId: String? = null,
+        browseId: String? = null,
+    ) {
+        this.playlistName = name
+        this.songs = songs
+        this.playlistId = playlistId
+        this.browseId = browseId
+        this.sessionVersion++
+        navigateCallback?.invoke()
+    }
+}
 
 /** Data satu kartu lagu di poster. [color] null = ikut warna dominan cover. */
 @Immutable
@@ -70,6 +121,8 @@ data class PosterElement(
     /** Kemiringan 3D: rotX = atas/bawah, rotY = kiri/kanan (derajat). Dipakai kartu Mode 2. */
     val rotX: Float = 0f,
     val rotY: Float = 0f,
+    /** Posisi kilau kartu Mode 2: 0 = kanan-atas, 1 = kiri-atas, 2 = kanan-atas + kanan-bawah. */
+    val sparkleStyle: Int = 0,
     /** Elemen dengan group sama bergerak bersama (foto + cutout dirinya di Mode 2). */
     val group: String? = null,
     /** true = elemen menutupi seluruh poster (crop), dipakai foto utama dan cutout-nya di Mode 2. */
@@ -77,11 +130,11 @@ data class PosterElement(
 )
 
 object PosterMetrics {
-    const val CARD_W = 0.60f          // lebar kartu = 60% lebar poster
-    const val CARD_ASPECT = 0.56f     // tinggi kartu = 56% lebar kartu
-    const val CUTOUT_H = 0.46f        // tinggi dasar cutout = 46% lebar poster
-    const val V_CARD_W = 0.33f        // Mode 2: kartu vertikal, lebar 33% lebar poster
-    const val V_CARD_ASPECT = 1.72f   // tinggi kartu = 1.72 x lebar kartu
+    const val CARD_W = 0.58f          // Mode 1: lebar kartu = 58% lebar poster (sesuai referensi)
+    const val CARD_ASPECT = 0.552f    // Mode 1: tinggi kartu = 55.2% lebar kartu
+    const val CUTOUT_H = 0.445f       // Mode 1: tinggi dasar cutout = 44.5% lebar poster
+    const val V_CARD_W = 0.35f        // Mode 2: kartu vertikal, lebar 35% lebar poster
+    const val V_CARD_ASPECT = 1.66f   // Mode 2: tinggi kartu = 1.66 x lebar kartu
     const val MAX_V_SONGS = 4
     const val MAX_PHOTOS = 3
     const val MAX_BACKGROUNDS = 3
@@ -99,8 +152,8 @@ class PhotoSlot(val id: String, val uri: android.net.Uri) {
 }
 
 val CARD_COLOR_PRESETS: List<Int> = listOf(
-    0xFF3A3A3A.toInt(), 0xFF5E2227.toInt(), 0xFF4E5428.toInt(), 0xFF1F3B5C.toInt(),
-    0xFF3D2B56.toInt(), 0xFF1E4D3B.toInt(), 0xFF000000.toInt(), 0xFFEDEDED.toInt(),
+    0xFF3E3E3E.toInt(), 0xFF5A2023.toInt(), 0xFF4E5329.toInt(), 0xFF1F3B5C.toInt(),
+    0xFF3D2B56.toInt(), 0xFF1E4D3B.toInt(), 0xFF23252A.toInt(), 0xFFEDEDED.toInt(),
 )
 
 val SOLID_BG_PRESETS: List<Int> = listOf(
@@ -117,21 +170,23 @@ val GRADIENT_BG_PRESETS: List<Pair<Int, Int>> = listOf(
 )
 
 object PosterColors {
-    private const val FALLBACK = 0xFF3A3A3A.toInt()
+    private const val FALLBACK = 0xFF3E3E3E.toInt()
 
-    /** Warna kartu otomatis dari cover: diambil dari Palette lalu digelapkan agar teks putih terbaca. */
+    /** Warna kartu otomatis dari cover: diambil dari Palette lalu digelapkan agar teks putih terbaca seperti referensi. */
     fun autoCardColor(cover: Bitmap?): Int {
         if (cover == null) return FALLBACK
         return try {
-            val p = Palette.from(cover).maximumColorCount(16).generate()
-            val rgb = p.darkMutedSwatch?.rgb
+            val p = Palette.from(cover).maximumColorCount(24).generate()
+            val rgb = p.darkVibrantSwatch?.rgb
+                ?: p.darkMutedSwatch?.rgb
+                ?: p.vibrantSwatch?.rgb
                 ?: p.mutedSwatch?.rgb
                 ?: p.dominantSwatch?.rgb
                 ?: return FALLBACK
             val hsv = FloatArray(3)
             Color.colorToHSV(rgb, hsv)
-            hsv[1] = min(hsv[1], 0.75f)
-            hsv[2] = max(0.20f, min(hsv[2], 0.36f))
+            hsv[1] = min(hsv[1], 0.72f)
+            hsv[2] = max(0.22f, min(hsv[2], 0.36f))
             Color.HSVToColor(hsv)
         } catch (_: Exception) {
             FALLBACK
@@ -155,7 +210,7 @@ object PosterBlur {
         val n = w * h
         val px = IntArray(n)
         small.getPixels(px, 0, w, 0, 0, w, h)
-        val radius = (1 + level * 22f).toInt().coerceAtLeast(1)
+        val radius = (1 + level * 26f).toInt().coerceAtLeast(1)
         fun channel(shift: Int): FloatArray {
             var arr = FloatArray(n) { ((px[it] shr shift) and 255).toFloat() }
             repeat(3) { arr = MaskRefiner.boxFilter(arr, w, h, radius) }

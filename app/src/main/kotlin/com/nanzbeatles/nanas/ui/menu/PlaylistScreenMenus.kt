@@ -146,6 +146,36 @@ fun LocalPlaylistMenu(
             )
         }
 
+        add(
+            Material3MenuItemData(
+                title = { Text("Buat Poster") },
+                description = { Text("Buat poster musik dari daftar putar ini") },
+                icon = {
+                    Icon(
+                        painter = painterResource(R.drawable.insert_photo),
+                        contentDescription = null
+                    )
+                },
+                onClick = {
+                    onDismiss()
+                    com.nanzbeatles.nanas.poster.PosterSession.openFromPlaylist(
+                        name = playlist.playlist.name,
+                        songs = songs.filter { !it.song.song.isVideo }.map {
+                            com.nanzbeatles.nanas.poster.PosterSong(
+                                id = it.song.song.id,
+                                title = it.song.song.title,
+                                artist = it.song.artists.joinToString(", ") { a -> a.name }.ifBlank { "Artis tidak diketahui" },
+                                durationSec = it.song.song.duration.takeIf { d -> d > 0 } ?: 200,
+                                thumbnailUrl = it.song.song.thumbnailUrl,
+                            )
+                        },
+                        playlistId = playlist.id,
+                        browseId = playlist.playlist.browseId,
+                    )
+                }
+            )
+        )
+
         add(downloadMenuItem)
 
         add(
@@ -205,7 +235,8 @@ fun AutoPlaylistMenu(
     downloadState: Int,
     onQueue: () -> Unit,
     onDownload: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onCreatePoster: (() -> Unit)? = null,
 ) {
     val listenTogetherManager = LocalListenTogetherManager.current
     val isGuest = listenTogetherManager?.isInRoom == true && !listenTogetherManager.isHost
@@ -270,6 +301,22 @@ fun AutoPlaylistMenu(
                     onClick = {
                         onQueue()
                         onDismiss()
+                    }
+                )
+            } else null,
+            if (onCreatePoster != null) {
+                Material3MenuItemData(
+                    title = { Text("Buat Poster") },
+                    description = { Text("Buat poster musik dari daftar putar ini") },
+                    icon = {
+                        Icon(
+                            painter = painterResource(R.drawable.insert_photo),
+                            contentDescription = null
+                        )
+                    },
+                    onClick = {
+                        onDismiss()
+                        onCreatePoster()
                     }
                 )
             } else null,
@@ -286,7 +333,8 @@ fun TopPlaylistMenu(
     downloadState: Int,
     onQueue: () -> Unit,
     onDownload: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onCreatePoster: (() -> Unit)? = null,
 ) {
     val listenTogetherManager = LocalListenTogetherManager.current
     val isGuest = listenTogetherManager?.isInRoom == true && !listenTogetherManager.isHost
@@ -354,6 +402,22 @@ fun TopPlaylistMenu(
                     }
                 )
             } else null,
+            if (onCreatePoster != null) {
+                Material3MenuItemData(
+                    title = { Text("Buat Poster") },
+                    description = { Text("Buat poster musik dari daftar putar ini") },
+                    icon = {
+                        Icon(
+                            painter = painterResource(R.drawable.insert_photo),
+                            contentDescription = null
+                        )
+                    },
+                    onClick = {
+                        onDismiss()
+                        onCreatePoster()
+                    }
+                )
+            } else null,
             downloadMenuItem
         )
     )
@@ -367,7 +431,8 @@ fun CachePlaylistMenu(
     downloadState: Int,
     onQueue: () -> Unit,
     onDownload: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onCreatePoster: (() -> Unit)? = null,
 ) {
     val listenTogetherManager = LocalListenTogetherManager.current
     val isGuest = listenTogetherManager?.isInRoom == true && !listenTogetherManager.isHost
@@ -432,6 +497,22 @@ fun CachePlaylistMenu(
                     onClick = {
                         onQueue()
                         onDismiss()
+                    }
+                )
+            } else null,
+            if (onCreatePoster != null) {
+                Material3MenuItemData(
+                    title = { Text("Buat Poster") },
+                    description = { Text("Buat poster musik dari daftar putar ini") },
+                    icon = {
+                        Icon(
+                            painter = painterResource(R.drawable.insert_photo),
+                            contentDescription = null
+                        )
+                    },
+                    onClick = {
+                        onDismiss()
+                        onCreatePoster()
                     }
                 )
             } else null,

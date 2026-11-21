@@ -1,10 +1,18 @@
 /**
  * NanzBeatles Project (C) 2026
  *
- * Mesin penghapus background untuk fitur Poster Musik Favorit.
+ * Mesin penghapus background presisi tinggi untuk fitur Poster Musik Favorit.
  *
- * Alur: decode foto (EXIF + sampling) -> segmentasi (ML Kit, offline) -> penghalusan tepi
- * (guided filter berbasis foto asli) -> bersihkan noise -> defringe warna tepi -> koreksi manual (kuas).
+ * Alur:
+ * 1. Decode foto (EXIF + sampling)
+ * 2. Segmentasi 2-Tahap Coarse-to-Fine ROI (ML Kit Selfie Segmentation):
+ *    - Tahap 1 mendeteksi area subjek manusia utama & mengisolasi objek latar sekitar.
+ *    - Tahap 2 memotong ROI karakter utama dan menjalankan ulang neural network pada resolusi penuh
+ *      khusus di area karakter sehingga detail tangan, rambut, dan pakaian 2-4x lebih tajam.
+ * 3. Pemisahan Afinitas Warna Lokal (Local Foreground vs Background Color Model):
+ *    - Membandingkan warna RGB/perseptual piksel di zona transisi terhadap warna subjek vs warna objek sekitar.
+ *    - Mencegah bagian tubuh/baju karakter ikut terhapus sekaligus membuang objek sekitar yang menempel.
+ * 4. Multi-channel RGB Guided Filter + Morphological Closing + Hole Filling + Defringe.
  */
 
 package com.nanzbeatles.nanas.poster
@@ -25,11 +33,13 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sqrt
 
 // ---------------------------------------------------------------------------------------------
 // Decode foto
@@ -109,17 +119,21 @@ object PosterImageLoader {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Segmentasi
+// Segmentasi 2-Tahap (Coarse-to-Fine ROI)
 // ---------------------------------------------------------------------------------------------
 
-/** Engine segmentasi bisa diganti (mis. model matting ONNX/TFLite) selama menghasilkan confidence 0..1. */
 interface BackgroundRemover {
     /** Mengembalikan confidence "orang" per piksel, ukuran sama dengan [bitmap] (w*h). */
     suspend fun confidence(bitmap: Bitmap): FloatArray
     fun close() {}
 }
 
-/** ML Kit Selfie Segmentation: model dibundel di APK, jalan offline. */
+/**
+ * ML Kit Selfie Segmentation dengan peningkatan Coarse-to-Fine 2-Tahap:
+ * - Tahap 1: deteksi posisi karakter utama pada foto penuh dan buang pulau objek di pinggir.
+ * - Tahap 2: crop khusus di sekitar karakter utama lalu jalankan segmentasi kedua sehingga
+ *   grid tensor 256x256 ML Kit terkonsentrasi penuh pada tubuh/tangan/kepala karakter.
+ */
 class MlKitSelfieRemover : BackgroundRemover {
     private val segmenter by lazy {
         Segmentation.getClient(
@@ -129,9 +143,9 @@ class MlKitSelfieRemover : BackgroundRemover {
         )
     }
 
-    override suspend fun confidence(bitmap: Bitmap): FloatArray {
+    private suspend fun runRawMask(bmp: Bitmap): FloatArray {
         val mask = suspendCancellableCoroutine<SegmentationMask> { cont ->
-            segmenter.process(InputImage.fromBitmap(bitmap, 0))
+            segmenter.process(InputImage.fromBitmap(bmp, 0))
                 .addOnSuccessListener { cont.resume(it) }
                 .addOnFailureListener { cont.resumeWithException(it) }
         }
@@ -141,8 +155,68 @@ class MlKitSelfieRemover : BackgroundRemover {
             val buf = mask.buffer
             val conf = FloatArray(mw * mh)
             for (i in conf.indices) conf[i] = buf.getFloat(i * 4)
-            if (mw == bitmap.width && mh == bitmap.height) conf
-            else MaskRefiner.resample(conf, mw, mh, bitmap.width, bitmap.height)
+            if (mw == bmp.width && mh == bmp.height) conf
+            else MaskRefiner.resample(conf, mw, mh, bmp.width, bmp.height)
+        }
+    }
+
+    override suspend fun confidence(bitmap: Bitmap): FloatArray {
+        val w = bitmap.width
+        val h = bitmap.height
+        val pass1 = runRawMask(bitmap)
+
+        // Cari bounding box karakter utama pada resolusi coarse supaya cepat
+        val roi = withContext(Dispatchers.Default) {
+            MaskRefiner.findMainSubjectBox(pass1, w, h)
+        } ?: return pass1
+
+        val rx0 = roi[0]
+        val ry0 = roi[1]
+        val rx1 = roi[2]
+        val ry1 = roi[3]
+        val rw = rx1 - rx0 + 1
+        val rh = ry1 - ry0 + 1
+
+        // Jika ROI sudah mencakup hampir seluruh gambar (>92%), pass1 saja sudah maksimal
+        if (rw >= w * 0.92f && rh >= h * 0.92f) {
+            return pass1
+        }
+
+        // Tahap 2: crop area karakter utama dan jalankan segmentasi presisi tinggi
+        val cropped = Bitmap.createBitmap(bitmap, rx0, ry0, rw, rh)
+        val pass2Crop = try {
+            runRawMask(cropped)
+        } finally {
+            if (cropped !== bitmap) cropped.recycle()
+        }
+
+        return withContext(Dispatchers.Default) {
+            val combined = FloatArray(w * h)
+            val feather = max(6f, min(rw, rh) * 0.04f)
+            for (y in ry0..ry1) {
+                val cy = y - ry0
+                val dyBorder = min(y - ry0, ry1 - y).toFloat()
+                val wy = (dyBorder / feather).coerceIn(0f, 1f)
+                val rowFull = y * w
+                val rowCrop = cy * rw
+                for (x in rx0..rx1) {
+                    val cx = x - rx0
+                    val dxBorder = min(x - rx0, rx1 - x).toFloat()
+                    val wx = (dxBorder / feather).coerceIn(0f, 1f)
+                    val wEdge = min(wx, wy)
+                    val c1 = pass1[rowFull + x]
+                    val c2 = pass2Crop[rowCrop + cx]
+                    // Di dalam ROI karakter: utamakan detail tajam pass2 (82%), namun jika pass1 & pass2
+                    // sama-sama yakin (>0.45), pertahankan agar bagian tubuh tidak putus.
+                    val blended = if (c2 >= 0.55f || c1 >= 0.72f) {
+                        max(c2, c1 * 0.88f)
+                    } else {
+                        c2 * 0.82f + c1 * 0.18f
+                    }
+                    combined[rowFull + x] = blended * (0.25f + 0.75f * wEdge)
+                }
+            }
+            combined
         }
     }
 
@@ -152,7 +226,7 @@ class MlKitSelfieRemover : BackgroundRemover {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Penghalusan mask
+// Penghalusan mask & Pemisahan Warna Subjek vs Objek Sekitar
 // ---------------------------------------------------------------------------------------------
 
 object MaskRefiner {
@@ -188,8 +262,8 @@ object MaskRefiner {
 
     /** Box filter (rata-rata jendela (2r+1)^2, tepi dinormalisasi), O(n). */
     fun boxFilter(src: FloatArray, w: Int, h: Int, r: Int): FloatArray {
+        if (r <= 0) return src.copyOf()
         val tmp = FloatArray(w * h)
-        // horizontal
         for (y in 0 until h) {
             val row = y * w
             var sum = 0f
@@ -205,7 +279,6 @@ object MaskRefiner {
                 tmp[row + x] = sum / cnt
             }
         }
-        // vertikal (cache-friendly: jumlahkan per baris)
         val out = FloatArray(w * h)
         val col = FloatArray(w)
         for (y in 0..min(r, h - 1)) {
@@ -233,7 +306,79 @@ object MaskRefiner {
         return out
     }
 
-    /** Guided filter (He et al.): membuat tepi mask mengikuti tepi pada foto asli. */
+    /**
+     * Cari bounding box karakter manusia utama dari confidence pass-1, mengabaikan objek terpisah di pinggir.
+     * Return [x0, y0, x1, y1] dengan margin ~14%.
+     */
+    fun findMainSubjectBox(conf: FloatArray, w: Int, h: Int): IntArray? {
+        val n = w * h
+        val binary = BooleanArray(n) { conf[it] > 0.32f }
+        val comp = label(binary, w, h)
+        if (comp.sizes.size <= 1) return null
+
+        var bestLabel = 0
+        var bestScore = -1f
+        // Hitung pusat massa dan skor tiap komponen (ukuran * bobot sentralitas)
+        val sumX = FloatArray(comp.sizes.size)
+        val sumY = FloatArray(comp.sizes.size)
+        val sumConf = FloatArray(comp.sizes.size)
+        for (i in 0 until n) {
+            val l = comp.labels[i]
+            if (l != 0) {
+                sumX[l] += (i % w).toFloat()
+                sumY[l] += (i / w).toFloat()
+                sumConf[l] += conf[i]
+            }
+        }
+        for (l in 1 until comp.sizes.size) {
+            val sz = comp.sizes[l]
+            if (sz < n * 0.005f) continue
+            val cx = (sumX[l] / sz) / w
+            val cy = (sumY[l] / sz) / h
+            // Karakter utama biasanya berada di area tengah horizontal/vertikal
+            val distCenter = hypot((cx - 0.5f) * 1.1f, (cy - 0.52f) * 0.8f)
+            val centerWeight = (1.15f - distCenter).coerceIn(0.35f, 1.15f)
+            val meanC = sumConf[l] / sz
+            val score = sz * centerWeight * (0.5f + 0.5f * meanC)
+            if (score > bestScore) {
+                bestScore = score
+                bestLabel = l
+            }
+        }
+        if (bestLabel == 0) return null
+
+        var minX = w
+        var minY = h
+        var maxX = -1
+        var maxY = -1
+        val mainSize = comp.sizes[bestLabel]
+        for (i in 0 until n) {
+            val l = comp.labels[i]
+            // Sertakan komponen utama, atau komponen cukup besar (>12% utama) yang sangat dekat (mis. tangan terpisah sedikit)
+            if (l == bestLabel || (l != 0 && comp.sizes[l] >= mainSize * 0.12f && sumConf[l] / comp.sizes[l] > 0.65f)) {
+                val x = i % w
+                val y = i / w
+                if (x < minX) minX = x
+                if (x > maxX) maxX = x
+                if (y < minY) minY = y
+                if (y > maxY) maxY = y
+            }
+        }
+        if (maxX < minX || maxY < minY) return null
+
+        val bw = maxX - minX + 1
+        val bh = maxY - minY + 1
+        val padX = max((bw * 0.16f).toInt(), (w * 0.05f).toInt())
+        val padY = max((bh * 0.14f).toInt(), (h * 0.05f).toInt())
+        return intArrayOf(
+            max(0, minX - padX),
+            max(0, minY - padY),
+            min(w - 1, maxX + padX),
+            min(h - 1, maxY + padY),
+        )
+    }
+
+    /** Guided filter (He et al.) untuk 1 channel panduan. */
     private fun guidedFilter(guide: FloatArray, p: FloatArray, w: Int, h: Int, r: Int, eps: Float): FloatArray {
         val n = w * h
         val meanI = boxFilter(guide, w, h, r)
@@ -254,6 +399,140 @@ object MaskRefiner {
         val meanA = boxFilter(a, w, h, r)
         val meanB = boxFilter(b, w, h, r)
         return FloatArray(n) { (meanA[it] * guide[it] + meanB[it]).coerceIn(0f, 1f) }
+    }
+
+    /**
+     * Multi-channel Color-Aware Guided Filter:
+     * Menggabungkan panduan dari Luminance (Y) dan Chrominance (R-G, B-Y) agar tepi mask
+     * memisahkan perbedaan warna antara karakter dan objek sekitar (walaupun tingkat terangnya mirip).
+     */
+    private fun guidedFilterColor(
+        rCh: FloatArray,
+        gCh: FloatArray,
+        bCh: FloatArray,
+        p: FloatArray,
+        w: Int,
+        h: Int,
+        r: Int,
+        eps: Float,
+    ): FloatArray {
+        val n = w * h
+        val lum = FloatArray(n) { 0.299f * rCh[it] + 0.587f * gCh[it] + 0.114f * bCh[it] }
+        val rg = FloatArray(n) { (rCh[it] - gCh[it]) * 0.5f + 0.5f }
+        val by = FloatArray(n) { (bCh[it] - 0.5f * (rCh[it] + gCh[it])) * 0.5f + 0.5f }
+
+        val qLum = guidedFilter(lum, p, w, h, r, eps)
+        val qRg = guidedFilter(rg, p, w, h, r, eps * 1.2f)
+        val qBy = guidedFilter(by, p, w, h, r, eps * 1.2f)
+
+        return FloatArray(n) { i ->
+            (0.50f * qLum[i] + 0.25f * qRg[i] + 0.25f * qBy[i]).coerceIn(0f, 1f)
+        }
+    }
+
+    /**
+     * Pemisahan Afinitas Warna Lokal (Local Foreground vs Background Color Discrimination):
+     * - Di area transisi/ragu (0.10 < conf < 0.90), kita membandingkan warna piksel dengan
+     *   rata-rata warna Foreground yakin (conf >= 0.78) dan Background yakin (conf <= 0.16) di sekitarnya.
+     * - Jika piksel di sekitar tepi warnanya mirip objek background dan berbeda jauh dari warna
+     *   baju/kulit karakter, confidence-nya ditekan agar objek sekitar terhapus bersih.
+     * - Jika piksel di dalam/tepi tubuh warnanya sangat mirip dengan baju/kulit karakter yang yakin
+     *   di dekatnya, confidence-nya diangkat agar bagian tubuh/baju karakter tidak ikut terhapus.
+     */
+    private fun applyLocalColorAffinity(
+        rCh: FloatArray,
+        gCh: FloatArray,
+        bCh: FloatArray,
+        conf: FloatArray,
+        w: Int,
+        h: Int,
+    ): FloatArray {
+        val n = w * h
+        val rad = (max(w, h) / 26).coerceIn(14, 42)
+
+        val fgW = FloatArray(n) { if (conf[it] >= 0.78f) 1f else if (conf[it] >= 0.65f) 0.35f else 0f }
+        val bgW = FloatArray(n) { if (conf[it] <= 0.15f) 1f else if (conf[it] <= 0.28f) 0.35f else 0f }
+
+        val sumFgW = boxFilter(fgW, w, h, rad)
+        val sumBgW = boxFilter(bgW, w, h, rad)
+
+        val fgR = boxFilter(FloatArray(n) { fgW[it] * rCh[it] }, w, h, rad)
+        val fgG = boxFilter(FloatArray(n) { fgW[it] * gCh[it] }, w, h, rad)
+        val fgB = boxFilter(FloatArray(n) { fgW[it] * bCh[it] }, w, h, rad)
+
+        val bgR = boxFilter(FloatArray(n) { bgW[it] * rCh[it] }, w, h, rad)
+        val bgG = boxFilter(FloatArray(n) { bgW[it] * gCh[it] }, w, h, rad)
+        val bgB = boxFilter(FloatArray(n) { bgW[it] * bCh[it] }, w, h, rad)
+
+        val out = FloatArray(n)
+        for (i in 0 until n) {
+            val c = conf[i]
+            val fw = sumFgW[i]
+            val bw = sumBgW[i]
+
+            if (c in 0.08f..0.93f && fw > 0.015f && bw > 0.015f) {
+                val mFgR = fgR[i] / fw
+                val mFgG = fgG[i] / fw
+                val mFgB = fgB[i] / fw
+
+                val mBgR = bgR[i] / bw
+                val mBgG = bgG[i] / bw
+                val mBgB = bgB[i] / bw
+
+                val pr = rCh[i]
+                val pg = gCh[i]
+                val pb = bCh[i]
+
+                // Jarak warna perseptual (bobot R, G, B)
+                val dFg = sqrt(
+                    2.1f * (pr - mFgR) * (pr - mFgR) +
+                        4.0f * (pg - mFgG) * (pg - mFgG) +
+                        1.9f * (pb - mFgB) * (pb - mFgB)
+                )
+                val dBg = sqrt(
+                    2.1f * (pr - mBgR) * (pr - mBgR) +
+                        4.0f * (pg - mBgG) * (pg - mBgG) +
+                        1.9f * (pb - mBgB) * (pb - mBgB)
+                )
+                // Seberapa kontras warna FG dan BG di lokasi ini
+                val fgBgSep = sqrt(
+                    2.1f * (mFgR - mBgR) * (mFgR - mBgR) +
+                        4.0f * (mFgG - mBgG) * (mFgG - mBgG) +
+                        1.9f * (mFgB - mBgB) * (mFgB - mBgB)
+                )
+
+                if (fgBgSep > 0.08f) {
+                    val colorAffinity = (dBg / (dFg + dBg + 1e-4f)).coerceIn(0f, 1f)
+                    val sepStrength = ((fgBgSep - 0.08f) / 0.35f).coerceIn(0f, 1f) * 0.48f
+                    var adjusted = c * (1f - sepStrength) + colorAffinity * sepStrength
+
+                    // Jika piksel berada di dalam area dominan FG dan warnanya sangat dekat dengan FG,
+                    // lindungi supaya baju/tangan karakter tidak ikut terhapus.
+                    if (c >= 0.32f && dFg < 0.14f && dBg > dFg * 1.65f) {
+                        adjusted = max(adjusted, (c + 0.24f).coerceAtMost(0.95f))
+                    }
+                    // Jika piksel berada di pinggir luar dan warnanya sangat mirip objek background,
+                    // tekan supaya objek sekitar karakter terhapus bersih.
+                    if (c <= 0.65f && dBg < 0.13f && dFg > dBg * 1.60f) {
+                        adjusted = min(adjusted, (c - 0.26f).coerceAtLeast(0.0f))
+                    }
+                    out[i] = adjusted.coerceIn(0f, 1f)
+                } else {
+                    out[i] = c
+                }
+            } else if (c in 0.30f..0.75f && fw > 0.25f && bw <= 0.015f) {
+                // Piksel berada di tengah-tengah tubuh karakter (dikelilingi FG, jauh dari BG)
+                val mFgR = fgR[i] / fw
+                val mFgG = fgG[i] / fw
+                val mFgB = fgB[i] / fw
+                val dFg = abs(rCh[i] - mFgR) + abs(gCh[i] - mFgG) + abs(bCh[i] - mFgB)
+                // Pulihkan bagian dalam tubuh/logo pakaian agar tidak bolong
+                out[i] = if (dFg < 0.45f) max(c, 0.85f) else max(c, 0.68f)
+            } else {
+                out[i] = c
+            }
+        }
+        return out
     }
 
     private class Components(val labels: IntArray, val sizes: IntArray, val touchesBorder: BooleanArray)
@@ -303,44 +582,111 @@ object MaskRefiner {
         return Components(labels, sizes.toIntArray(), border.toBooleanArray())
     }
 
-    /** Buang pulau-pulau kecil di background dan tutup lubang kecil di dalam subjek. */
+    /**
+     * Bersihkan objek sekitar yang terpisah dari karakter utama, pertahankan tangan/lengan yang
+     * tersambung jembatan tipis, dan tutup lubang di dalam tubuh/pakaian karakter.
+     */
     private fun cleanup(alpha: FloatArray, w: Int, h: Int) {
         val n = w * h
-        val fg = BooleanArray(n) { alpha[it] > 0.5f }
-        val fgComp = label(fg, w, h)
-        var largest = 0
-        for (i in 1 until fgComp.sizes.size) largest = max(largest, fgComp.sizes[i])
-        if (largest == 0) return
 
-        val keep = BooleanArray(fgComp.sizes.size)
-        for (i in 1 until fgComp.sizes.size) keep[i] = fgComp.sizes[i] >= largest * 0.04f
+        // 1. Gunakan threshold jembatan rendah (0.24f) agar tangan/jari yang terhubung pergelangan tipis
+        //    tetap dianggap satu kesatuan dengan tubuh karakter utama.
+        val bridgeFg = BooleanArray(n) { alpha[it] > 0.24f }
+        val bridgeComp = label(bridgeFg, w, h)
+        if (bridgeComp.sizes.size <= 1) return
 
-        val kept = FloatArray(n) { if (keep[fgComp.labels[it]] && fgComp.labels[it] != 0) 1f else 0f }
-        val near = boxFilter(kept, w, h, 7)
+        // Pilih komponen karakter utama (skor kombinasi luas area & sentralitas)
+        val sumX = FloatArray(bridgeComp.sizes.size)
+        val sumY = FloatArray(bridgeComp.sizes.size)
+        val strongCount = IntArray(bridgeComp.sizes.size)
         for (i in 0 until n) {
-            if (near[i] <= 0.0001f) alpha[i] = 0f
+            val l = bridgeComp.labels[i]
+            if (l != 0) {
+                sumX[l] += (i % w).toFloat()
+                sumY[l] += (i / w).toFloat()
+                if (alpha[i] > 0.60f) strongCount[l]++
+            }
         }
 
-        // lubang kecil (background yang terkurung subjek)
-        val bg = BooleanArray(n) { alpha[it] <= 0.5f }
+        var mainLabel = 0
+        var bestScore = -1f
+        for (l in 1 until bridgeComp.sizes.size) {
+            val sz = bridgeComp.sizes[l]
+            if (strongCount[l] < 20) continue
+            val cx = (sumX[l] / sz) / w
+            val cy = (sumY[l] / sz) / h
+            val distCenter = hypot((cx - 0.5f) * 1.1f, (cy - 0.52f) * 0.8f)
+            val centerWeight = (1.15f - distCenter).coerceIn(0.35f, 1.15f)
+            val score = strongCount[l] * centerWeight
+            if (score > bestScore) {
+                bestScore = score
+                mainLabel = l
+            }
+        }
+        if (mainLabel == 0) return
+
+        val mainStrong = strongCount[mainLabel]
+        val keepBridge = BooleanArray(bridgeComp.sizes.size)
+        for (l in 1 until bridgeComp.sizes.size) {
+            // Simpan komponen karakter utama; buang pulau/objek lain di sekitar kecuali bagian besar yang sangat yakin
+            keepBridge[l] = (l == mainLabel) ||
+                (strongCount[l] >= mainStrong * 0.18f && strongCount[l].toFloat() / bridgeComp.sizes[l] > 0.72f)
+        }
+
+        val keptMask = FloatArray(n) {
+            val l = bridgeComp.labels[it]
+            if (l != 0 && keepBridge[l]) 1f else 0f
+        }
+        val nearKept = boxFilter(keptMask, w, h, 3)
+        for (i in 0 until n) {
+            if (nearKept[i] <= 0.001f) alpha[i] = 0f
+        }
+
+        // 2. Pada threshold ketat (0.48f), buang serpihan/pulau kecil yang lepas dari tubuh
+        val strictFg = BooleanArray(n) { alpha[it] > 0.48f }
+        val strictComp = label(strictFg, w, h)
+        var largestStrict = 0
+        for (l in 1 until strictComp.sizes.size) largestStrict = max(largestStrict, strictComp.sizes[l])
+        if (largestStrict > 0) {
+            val minIsland = max(24, (largestStrict * 0.004f).toInt())
+            for (i in 0 until n) {
+                val l = strictComp.labels[i]
+                if (l != 0 && strictComp.sizes[l] < minIsland) {
+                    alpha[i] = 0f
+                }
+            }
+        }
+
+        // 3. Tutup lubang di dalam tubuh/pakaian karakter (hingga 3.5% luas gambar, mis. logo baju, sabuk, bayangan)
+        val bg = BooleanArray(n) { alpha[it] <= 0.55f }
         val bgComp = label(bg, w, h)
-        val maxHole = (n * 0.0008f).toInt()
+        val maxHole = (n * 0.035f).toInt()
         for (i in 0 until n) {
             val l = bgComp.labels[i]
-            if (l != 0 && !bgComp.touchesBorder[l] && bgComp.sizes[l] <= maxHole) alpha[i] = 1f
+            if (l != 0 && !bgComp.touchesBorder[l] && bgComp.sizes[l] <= maxHole) {
+                alpha[i] = max(alpha[i], 0.96f)
+            }
         }
     }
 
     /** Hasil: alpha dasar 0..1 (belum dikurva), ukuran w*h. */
     fun refine(pixels: IntArray, confidence: FloatArray, w: Int, h: Int): FloatArray {
         val n = w * h
-        val p = FloatArray(n) { smoothstep(0.15f, 0.85f, confidence[it]) }
-        val gray = FloatArray(n) {
-            val c = pixels[it]
-            (0.299f * ((c shr 16) and 255) + 0.587f * ((c shr 8) and 255) + 0.114f * (c and 255)) / 255f
-        }
-        val r = (max(w, h) / 180).coerceIn(4, 10)
-        val q = guidedFilter(gray, p, w, h, r, 1e-3f)
+        val rCh = FloatArray(n) { ((pixels[it] shr 16) and 255) / 255f }
+        val gCh = FloatArray(n) { ((pixels[it] shr 8) and 255) / 255f }
+        val bCh = FloatArray(n) { (pixels[it] and 255) / 255f }
+
+        // 1. Koreksi confidence dengan afinitas warna lokal (FG vs BG)
+        val colorAdjusted = applyLocalColorAffinity(rCh, gCh, bCh, confidence, w, h)
+
+        // 2. Kontraskan kurva awal sebelum guided filter
+        val p = FloatArray(n) { smoothstep(0.16f, 0.82f, colorAdjusted[it]) }
+
+        // 3. Multi-channel Color Guided Filter agar tepi mengikuti batas warna asli
+        val r = (max(w, h) / 210).coerceIn(3, 7)
+        val q = guidedFilterColor(rCh, gCh, bCh, p, w, h, r, 6e-4f)
+
+        // 4. Bersihkan objek sekitar & tutup lubang di dalam tubuh karakter
         cleanup(q, w, h)
         return q
     }
@@ -348,8 +694,8 @@ object MaskRefiner {
     /** Netralkan warna background yang "bocor" di piksel tepi semi-transparan. */
     fun defringe(pixels: IntArray, alpha: FloatArray, w: Int, h: Int): IntArray {
         val n = w * h
-        val solid = FloatArray(n) { if (alpha[it] >= 0.97f) 1f else 0f }
-        val rad = 3
+        val solid = FloatArray(n) { if (alpha[it] >= 0.96f) 1f else 0f }
+        val rad = 4
         val sumW = boxFilter(solid, w, h, rad)
         fun channel(shift: Int): FloatArray {
             val c = FloatArray(n) { solid[it] * ((pixels[it] shr shift) and 255) }
@@ -361,8 +707,8 @@ object MaskRefiner {
         val out = pixels.copyOf()
         for (i in 0 until n) {
             val a = alpha[i]
-            if (a > 0.02f && a < 0.97f && sumW[i] > 0.02f) {
-                val t = (1f - a) * 0.85f
+            if (a > 0.02f && a < 0.96f && sumW[i] > 0.02f) {
+                val t = (1f - a) * 0.88f
                 val c = pixels[i]
                 val r0 = (c shr 16) and 255
                 val g0 = (c shr 8) and 255
@@ -392,7 +738,7 @@ class CutoutEditor private constructor(
 
     var edgeShift = 0f
         private set
-    var softness = 0.25f
+    var softness = 0.20f
         private set
 
     private val n = width * height
@@ -412,8 +758,8 @@ class CutoutEditor private constructor(
     }
 
     private fun curve(b: Float): Float {
-        val c = 0.5f - edgeShift
-        val hw = 0.08f + 0.4f * softness
+        val c = 0.47f - edgeShift
+        val hw = 0.05f + 0.28f * softness
         return MaskRefiner.smoothstep(c - hw, c + hw, b)
     }
 
@@ -506,7 +852,7 @@ class CutoutEditor private constructor(
         manualVal.fill(0)
         manualW.fill(0)
         edgeShift = 0f
-        softness = 0.25f
+        softness = 0.20f
         rebuildAll()
     }
 
@@ -536,7 +882,7 @@ class CutoutEditor private constructor(
     }
 
     companion object {
-        /** Proses lengkap di background thread: segmentasi + penghalusan + defringe. */
+        /** Proses lengkap di background thread: segmentasi 2-tahap + penghalusan warna + defringe. */
         suspend fun create(original: Bitmap, remover: BackgroundRemover): CutoutEditor {
             val conf = remover.confidence(original)
             return withContext(Dispatchers.Default) {

@@ -430,6 +430,35 @@ fun PlaylistMenu(
                             )
                         )
                     }
+                    add(
+                        Material3MenuItemData(
+                            title = { Text(text = "Buat Poster") },
+                            description = { Text(text = "Buat poster musik dari daftar putar ini") },
+                            icon = {
+                                Icon(
+                                    painter = painterResource(R.drawable.insert_photo),
+                                    contentDescription = null,
+                                )
+                            },
+                            onClick = {
+                                onDismiss()
+                                com.nanzbeatles.nanas.poster.PosterSession.openFromPlaylist(
+                                    name = playlist.playlist.name,
+                                    songs = songs.filter { !it.song.isVideo }.map {
+                                        com.nanzbeatles.nanas.poster.PosterSong(
+                                            id = it.song.id,
+                                            title = it.song.title,
+                                            artist = it.artists.joinToString(", ") { a -> a.name }.ifBlank { "Artis tidak diketahui" },
+                                            durationSec = it.song.duration.takeIf { d -> d > 0 } ?: 200,
+                                            thumbnailUrl = it.song.thumbnailUrl,
+                                        )
+                                    },
+                                    playlistId = if (autoPlaylist == true) null else playlist.id,
+                                    browseId = playlist.playlist.browseId,
+                                )
+                            }
+                        )
+                    )
                 }
             )
         }

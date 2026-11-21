@@ -1,7 +1,7 @@
 /**
  * NanzBeatles Project (C) 2026
  *
- * Layar Poster Musik Favorit (Mode 1): pilih mode -> lagu -> foto -> hapus background/koreksi
+ * Layar Poster Musik Favorit: pilih mode -> pilih lagu dari daftar putar -> foto -> hapus background/koreksi
  * -> background -> editor bebas -> simpan/bagikan.
  */
 
@@ -17,8 +17,8 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -63,7 +63,6 @@ import androidx.compose.material.icons.rounded.Undo
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -72,13 +71,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -86,7 +85,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -123,8 +121,8 @@ import kotlin.math.max
 import kotlin.math.min
 
 private fun stepTitle(step: PosterStep) = when (step) {
-    PosterStep.MODE -> "Poster Musik Favorit"
-    PosterStep.SONGS -> "Pilih lagu"
+    PosterStep.MODE -> "Buat Poster"
+    PosterStep.SONGS -> "Pilih lagu daftar putar"
     PosterStep.PHOTOS -> "Foto kamu"
     PosterStep.CUTOUT -> "Hapus background"
     PosterStep.BACKGROUND -> "Background"
@@ -137,6 +135,9 @@ fun PosterScreen(
     viewModel: PosterViewModel = hiltViewModel(),
 ) {
     val vm = viewModel
+    LaunchedEffect(Unit) {
+        vm.loadPlaylistSongsIfNeeded()
+    }
     BackHandler {
         if (!vm.back()) navController.navigateUp()
     }
@@ -184,7 +185,7 @@ private fun ModeStep(vm: PosterViewModel) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
-            "Buat poster lagu favoritmu, lalu simpan atau bagikan sebagai gambar.",
+            "Buat poster dari daftar putar \"${vm.playlistName}\", lalu simpan atau bagikan sebagai gambar.",
             style = MaterialTheme.typography.bodyMedium,
         )
         Card(
@@ -194,8 +195,8 @@ private fun ModeStep(vm: PosterViewModel) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Mode 1: Kartu + Kolase", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 Text(
-                    "3 kartu pemutar musik bergaya zig-zag, foto kamu (background dihapus) menimpa kartu, " +
-                        "di atas kolase foto buram. Semua elemen bebas diatur.",
+                    "3 kartu pemutar musik bergaya zig-zag, foto kamu (background dihapus presisi) menimpa kartu, " +
+                        "di atas kolase 3 foto buram. Semua elemen bebas diatur.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
@@ -205,10 +206,10 @@ private fun ModeStep(vm: PosterViewModel) {
             modifier = Modifier.fillMaxWidth(),
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Mode 2: Poster Foto 3D", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text("Mode 2: Poster Foto 3D (Khusus Potrait)", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 Text(
-                    "Fotomu jadi background penuh, 1 sampai 4 kartu lagu vertikal melayang miring 3D di sekelilingmu. " +
-                        "Kemiringan kiri/kanan, atas/bawah, dan sudut tiap kartu bisa diatur.",
+                    "Khusus foto potrait (vertikal 9:16). Fotomu jadi background penuh, 1 sampai 4 kartu lagu vertikal " +
+                        "melayang miring 3D di sekelilingmu dengan efek kilau bintang.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
@@ -217,73 +218,92 @@ private fun ModeStep(vm: PosterViewModel) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// 2. Pilih lagu
+// 2. Pilih lagu dari daftar putar (tanpa kolom pencarian, langsung daftar lagu playlist)
 // ---------------------------------------------------------------------------------------------
 
 @Composable
 private fun SongsStep(vm: PosterViewModel) {
-    val songs by vm.allSongs.collectAsState()
-    var query by rememberSaveable { mutableStateOf("") }
-    val filtered = remember(songs, query) {
-        val q = query.trim().lowercase()
-        if (q.isEmpty()) songs
-        else songs.filter { it.title.lowercase().contains(q) || it.artist.lowercase().contains(q) }
-    }
+    val songs by vm.playlistSongs.collectAsState()
 
     Column(
         Modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp)
     ) {
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            singleLine = true,
-            placeholder = { Text("Cari lagu atau artis") },
-            modifier = Modifier.fillMaxWidth(),
+        Text(
+            text = "Daftar putar: ${vm.playlistName}",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(top = 4.dp),
         )
         Text(
-            if (vm.minSongs == vm.maxSongs) "Pilih ${vm.maxSongs} lagu berbeda (${vm.selectedSongs.size}/${vm.maxSongs})"
-            else "Pilih ${vm.minSongs} sampai ${vm.maxSongs} lagu (${vm.selectedSongs.size}/${vm.maxSongs})",
+            if (vm.minSongs == vm.maxSongs) "Pilih ${vm.maxSongs} lagu dari daftar putar ini (${vm.selectedSongs.size}/${vm.maxSongs})"
+            else "Pilih ${vm.minSongs} sampai ${vm.maxSongs} lagu dari daftar putar ini (${vm.selectedSongs.size}/${vm.maxSongs})",
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(vertical = 8.dp),
         )
-        if (songs.isEmpty()) {
-            Text(
-                "Belum ada lagu di library. Putar atau simpan beberapa lagu dulu, lalu kembali ke sini.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
-        LazyColumn(Modifier.weight(1f)) {
-            items(filtered, key = { it.id }) { song ->
-                val checked = vm.selectedSongs.any { it.id == song.id }
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable { vm.toggleSong(song) }
-                        .padding(vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    AsyncImage(
-                        model = song.thumbnailUrl,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
-                        Text(
-                            song.artist,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.bodySmall,
+        if (vm.playlistLoading) {
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        } else if (songs.isEmpty()) {
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text(
+                    "Daftar putar ini belum memiliki lagu. Tambahkan lagu ke daftar putar terlebih dahulu.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        } else {
+            LazyColumn(Modifier.weight(1f)) {
+                items(songs, key = { it.id }) { song ->
+                    val checked = vm.selectedSongs.any { it.id == song.id }
+                    val orderIdx = vm.selectedSongs.indexOfFirst { it.id == song.id }
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { vm.toggleSong(song) }
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        AsyncImage(
+                            model = song.thumbnailUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant),
                         )
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
+                            Text(
+                                song.artist,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        if (orderIdx >= 0) {
+                            Box(
+                                modifier = Modifier
+                                    .padding(end = 4.dp)
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = "${orderIdx + 1}",
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                        }
+                        Checkbox(checked = checked, onCheckedChange = { vm.toggleSong(song) })
                     }
-                    Checkbox(checked = checked, onCheckedChange = { vm.toggleSong(song) })
                 }
             }
         }
@@ -332,10 +352,10 @@ private fun PhotosStep(vm: PosterViewModel) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
-            if (single) "Pilih 1 foto utama. Foto ini jadi background penuh, dan dirimu dipisahkan dari background " +
-                "supaya bisa berdiri di depan kartu lagu. Pilih foto dengan orang yang terlihat jelas."
-            else "Tambahkan minimal 1 foto (maksimal ${PosterMetrics.MAX_PHOTOS}). " +
-                "Foto dengan orang yang terlihat jelas dan pencahayaan cukup memberi hasil hapus background terbaik.",
+            if (single) "Pilih 1 foto potrait (vertikal). Foto ini jadi background penuh 9:16, dan dirimu dipisahkan dari background " +
+                "supaya bisa berdiri di depan kartu lagu 3D."
+            else "Tambahkan minimal 1 foto (maksimal ${PosterMetrics.MAX_PHOTOS} foto untuk 3 kartu lagu). " +
+                "Karakter akan dipisahkan otomatis dari objek sekitar.",
             style = MaterialTheme.typography.bodyMedium,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -393,11 +413,14 @@ private fun PhotosStep(vm: PosterViewModel) {
                 }
             }
         }
+        vm.photoValidationMessage?.let {
+            Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
         vm.photos.firstOrNull { it.error != null }?.error?.let {
             Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
         }
         if (loading) {
-            Text("Memproses foto... ini bisa beberapa detik.", style = MaterialTheme.typography.bodySmall)
+            Text("Memproses pemisahan karakter presisi tinggi... mohon tunggu sebentar.", style = MaterialTheme.typography.bodySmall)
         }
         Button(
             onClick = {
@@ -431,7 +454,7 @@ private fun CutoutStep(vm: PosterViewModel) {
     var brushDp by remember(slot.id) { mutableFloatStateOf(28f) }
     var hardness by remember(slot.id) { mutableFloatStateOf(0.7f) }
     var edge by remember(slot.id) { mutableFloatStateOf(editor?.edgeShift ?: 0f) }
-    var soft by remember(slot.id) { mutableFloatStateOf(editor?.softness ?: 0.25f) }
+    var soft by remember(slot.id) { mutableFloatStateOf(editor?.softness ?: 0.20f) }
     var revision by remember(slot.id) { mutableIntStateOf(0) }
 
     Column(
@@ -515,7 +538,7 @@ private fun CutoutStep(vm: PosterViewModel) {
                         onClick = {
                             editor.resetToAuto()
                             edge = 0f
-                            soft = 0.25f
+                            soft = 0.20f
                             revision++
                         }
                     ) { Icon(Icons.Rounded.RestartAlt, contentDescription = "Reset ke hasil otomatis") }
@@ -537,7 +560,7 @@ private fun CutoutStep(vm: PosterViewModel) {
                     onFinished = { editor.setEdge(edge, soft); revision++ },
                 )
                 Text(
-                    "Satu jari: kuas. Dua jari: zoom dan geser gambar.",
+                    "Satu jari: kuas (Hapus / Pulihkan). Dua jari: zoom dan geser gambar.",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -739,8 +762,8 @@ private fun BackgroundStep(vm: PosterViewModel) {
         when (vm.bgMode) {
             BackgroundMode.PHOTO -> {
                 Text(
-                    "Pilih 1 sampai ${PosterMetrics.MAX_BACKGROUNDS} foto. Jika lebih dari satu, tampil sebagai " +
-                        "kolase bertingkat dan tiap foto bisa digeser di editor.",
+                    "Pilih 1 sampai ${PosterMetrics.MAX_BACKGROUNDS} foto. Jika memilih 3 foto, tampil sebagai " +
+                        "3 pita kolase buram bertingkat persis seperti referensi Mode 1.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -990,12 +1013,21 @@ private fun EditorPanel(
             IconButton(onClick = { vm.resetLayout() }) {
                 Icon(Icons.Rounded.RestartAlt, contentDescription = "Reset tata letak")
             }
-            PosterAspect.entries.forEach { a ->
+            // Mode 2 hanya tersedia dalam template potrait 9:16
+            if (vm.mode == PosterMode.PHOTO3D) {
                 FilterChip(
-                    selected = vm.aspect == a,
-                    onClick = { vm.changeAspect(a) },
-                    label = { Text(a.label) },
+                    selected = true,
+                    onClick = {},
+                    label = { Text("Potrait 9:16") },
                 )
+            } else {
+                PosterAspect.entries.forEach { a ->
+                    FilterChip(
+                        selected = vm.aspect == a,
+                        onClick = { vm.changeAspect(a) },
+                        label = { Text(a.label) },
+                    )
+                }
             }
         }
 
@@ -1003,7 +1035,7 @@ private fun EditorPanel(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Switch(checked = vm.sparkle, onCheckedChange = { vm.sparkle = it })
                 Spacer(Modifier.width(8.dp))
-                Text("Kilau di sudut kartu", style = MaterialTheme.typography.bodyMedium)
+                Text("Kilau bintang di sudut kartu", style = MaterialTheme.typography.bodyMedium)
             }
         }
 
