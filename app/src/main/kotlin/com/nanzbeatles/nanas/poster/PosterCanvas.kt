@@ -36,6 +36,8 @@ import androidx.compose.material.icons.rounded.FastRewind
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.Repeat
+import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.VolumeMute
@@ -503,7 +505,7 @@ fun PosterCardVertical(
                                 fontWeight = FontWeight.Medium,
                             )
                             Text(
-                                text = "-" + fmtMs((total - elapsed).coerceAtLeast(0)),
+                                text = fmtMs(total),
                                 color = textColor.copy(alpha = 0.76f),
                                 fontSize = sp(0.044f),
                                 fontWeight = FontWeight.Medium,
@@ -511,14 +513,20 @@ fun PosterCardVertical(
                         }
                     }
 
-                    // Tombol kontrol pemutar (<<, ||, >>)
+                    // Tombol kontrol pemutar (Shuffle, <<, ||, >>, Repeat) persis sesuai beatles_player_card
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = dp(0.04f)),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
+                            .padding(horizontal = dp(0.015f)),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        Icon(
+                            Icons.Rounded.Shuffle,
+                            contentDescription = null,
+                            tint = textColor.copy(alpha = 0.75f),
+                            modifier = Modifier.size(dp(0.075f)),
+                        )
                         Icon(
                             Icons.Rounded.FastRewind,
                             contentDescription = null,
@@ -536,6 +544,12 @@ fun PosterCardVertical(
                             contentDescription = null,
                             tint = textColor,
                             modifier = Modifier.size(dp(0.098f)),
+                        )
+                        Icon(
+                            Icons.Rounded.Repeat,
+                            contentDescription = null,
+                            tint = textColor.copy(alpha = 0.75f),
+                            modifier = Modifier.size(dp(0.075f)),
                         )
                     }
 
@@ -787,6 +801,15 @@ fun PosterContent(
                                 bitmap = it.asImageBitmap(),
                                 contentDescription = null,
                                 contentScale = if (el.fill) ContentScale.Crop else ContentScale.FillBounds,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                        ElementKind.STICKER -> {
+                            val resId = STAR_STICKER_RES.getOrNull(el.refIndex) ?: STAR_STICKER_RES[0]
+                            Image(
+                                painter = painterResource(resId),
+                                contentDescription = null,
+                                contentScale = ContentScale.Fit,
                                 modifier = Modifier.fillMaxSize(),
                             )
                         }

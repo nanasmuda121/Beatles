@@ -731,6 +731,25 @@ class PosterViewModel @Inject constructor(
             w to h
         }
         ElementKind.BACKGROUND -> if (el.fill) cw to ch else cw to (ch / el.bgCount.coerceAtLeast(1))
+        ElementKind.STICKER -> {
+            val sz = cw * 0.28f
+            sz to sz
+        }
+    }
+
+    fun addSticker(index: Int) {
+        recordHistory()
+        val el = PosterElement(
+            id = UUID.randomUUID().toString(),
+            kind = ElementKind.STICKER,
+            refIndex = index.coerceIn(0, STAR_STICKER_RES.lastIndex),
+            cx = 0.5f,
+            cy = 0.5f,
+            scale = 1f,
+        )
+        elements = elements + el
+        selectedId = el.id
+        historyVersion++
     }
 
     // ------------------------------------------------------------------ export

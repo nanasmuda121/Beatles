@@ -628,7 +628,7 @@ object MaskRefiner {
             // Simpan komponen karakter utama; buang pulau di luar kecuali tangan/kaki atau menyentuh tepi bawah/samping
             keepBridge[l] = (l == mainLabel) ||
                 (strongCount[l] >= mainStrong * 0.03f && strongCount[l].toFloat() / bridgeComp.sizes[l] > 0.40f) ||
-                (bridgeComp.border[l] && strongCount[l] >= 40)
+                (bridgeComp.touchesBorder[l] && strongCount[l] >= 40)
         }
 
         val keptMask = FloatArray(n) {

@@ -19,6 +19,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -32,37 +33,47 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AspectRatio
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Flip
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Redo
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.RestartAlt
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Undo
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -72,7 +83,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -148,6 +162,19 @@ fun PosterScreen(
             navigationIcon = {
                 IconButton(onClick = { if (!vm.back()) navController.navigateUp() }) {
                     Icon(painterResource(R.drawable.arrow_back), contentDescription = "Kembali")
+                }
+            },
+            actions = {
+                if (vm.step == PosterStep.EDITOR) {
+                    IconButton(onClick = { vm.undo() }, enabled = vm.canUndo) {
+                        Icon(Icons.Rounded.Undo, contentDescription = "Undo")
+                    }
+                    IconButton(onClick = { vm.redo() }, enabled = vm.canRedo) {
+                        Icon(Icons.Rounded.Redo, contentDescription = "Redo")
+                    }
+                    IconButton(onClick = { vm.resetLayout() }) {
+                        Icon(Icons.Rounded.RestartAlt, contentDescription = "Reset tata letak")
+                    }
                 }
             },
         )
@@ -947,7 +974,7 @@ private fun EditorStep(vm: PosterViewModel) {
             Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .padding(8.dp),
+                .padding(horizontal = 8.dp, vertical = 4.dp),
             contentAlignment = Alignment.Center,
         ) {
             val availW = maxWidth
@@ -961,10 +988,46 @@ private fun EditorStep(vm: PosterViewModel) {
         }
         EditorPanel(
             vm = vm,
-            busy = busy,
-            onSave = ::doSave,
-            onShare = ::doShare,
         )
+        Surface(
+            tonalElevation = 4.dp,
+            shadowElevation = 8.dp,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                OutlinedButton(
+                    onClick = ::doShare,
+                    enabled = !busy,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Icon(Icons.Rounded.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Bagikan")
+                }
+                Button(
+                    onClick = ::doSave,
+                    enabled = !busy,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    if (busy) {
+                        CircularProgressIndicator(
+                            Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                        )
+                    } else {
+                        Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Simpan")
+                    }
+                }
+            }
+        }
     }
 
     if (message != null) {
@@ -983,143 +1046,293 @@ private fun resultMessage(result: PosterSaveResult): String = when (result) {
     is PosterSaveResult.Failed -> "Gagal menyimpan: ${result.message}"
 }
 
+private enum class EditorTab {
+    ELEMENT,
+    STICKER,
+    CANVAS,
+}
+
+private fun kindShort(kind: ElementKind): String = when (kind) {
+    ElementKind.CARD -> "Kartu"
+    ElementKind.CUTOUT -> "Foto"
+    ElementKind.BACKGROUND -> "BG"
+    ElementKind.STICKER -> "Stiker"
+}
+
 @Composable
 private fun EditorPanel(
     vm: PosterViewModel,
-    busy: Boolean,
-    onSave: () -> Unit,
-    onShare: () -> Unit,
 ) {
     val sel = vm.selected
+    var selectedTab by remember { mutableStateOf(EditorTab.ELEMENT) }
+
     Column(
         Modifier
             .fillMaxWidth()
-            .height(230.dp)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp, vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+            .heightIn(min = 180.dp, max = 230.dp)
+            .background(MaterialTheme.colorScheme.surface),
     ) {
-        Row(
-            Modifier.horizontalScroll(rememberScrollState()),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        TabRow(
+            selectedTabIndex = selectedTab.ordinal,
+            modifier = Modifier.fillMaxWidth(),
         ) {
-            IconButton(onClick = { vm.undo() }, enabled = vm.canUndo) {
-                Icon(Icons.Rounded.Undo, contentDescription = "Undo")
-            }
-            IconButton(onClick = { vm.redo() }, enabled = vm.canRedo) {
-                Icon(Icons.Rounded.Redo, contentDescription = "Redo")
-            }
-            IconButton(onClick = { vm.resetLayout() }) {
-                Icon(Icons.Rounded.RestartAlt, contentDescription = "Reset tata letak")
-            }
-            // Mode 2 hanya tersedia dalam template potrait 9:16
-            if (vm.mode == PosterMode.PHOTO3D) {
-                FilterChip(
-                    selected = true,
-                    onClick = {},
-                    label = { Text("Potrait 9:16") },
-                )
-            } else {
-                PosterAspect.entries.forEach { a ->
-                    FilterChip(
-                        selected = vm.aspect == a,
-                        onClick = { vm.changeAspect(a) },
-                        label = { Text(a.label) },
-                    )
-                }
-            }
-        }
-
-        if (vm.mode == PosterMode.PHOTO3D) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Switch(checked = vm.sparkle, onCheckedChange = { vm.sparkle = it })
-                Spacer(Modifier.width(8.dp))
-                Text("Kilau bintang di sudut kartu", style = MaterialTheme.typography.bodyMedium)
-            }
-        }
-
-        if (sel == null) {
-            Text(
-                "Ketuk kartu, foto, atau background di poster untuk memilih. Satu jari menggeser, dua jari " +
-                    "mencubit untuk zoom dan memutar.",
-                style = MaterialTheme.typography.bodySmall,
-            )
-        } else {
-            val kindLabel = when (sel.kind) {
-                ElementKind.CARD -> "Kartu lagu"
-                ElementKind.CUTOUT -> "Foto"
-                ElementKind.BACKGROUND -> "Background"
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(kindLabel, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                IconButton(onClick = { vm.bringForward() }) {
-                    Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "Maju satu layer")
-                }
-                IconButton(onClick = { vm.sendBackward() }) {
-                    Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Mundur satu layer")
-                }
-                if (sel.kind == ElementKind.CUTOUT) {
-                    IconButton(onClick = { vm.flipSelected() }) {
-                        Icon(Icons.Rounded.Flip, contentDescription = "Balik horizontal")
+            Tab(
+                selected = selectedTab == EditorTab.ELEMENT,
+                onClick = { selectedTab = EditorTab.ELEMENT },
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.Tune, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (sel != null) "Elemen (${kindShort(sel.kind)})" else "Elemen")
                     }
-                }
-                IconButton(onClick = { vm.deleteSelected() }) {
-                    Icon(Icons.Rounded.Delete, contentDescription = "Hapus elemen")
-                }
-            }
-            SliderRow("Ukuran", sel.scale, 0.15f..3f, onChange = { vm.setSelectedScale(it) })
-            SliderRow("Sudut (putar)", sel.rotation.coerceIn(-180f, 180f), -180f..180f, onChange = { vm.setSelectedRotation(it) })
-            if (sel.kind == ElementKind.CARD) {
-                SliderRow("Miring kiri / kanan", sel.rotY.coerceIn(-70f, 70f), -70f..70f, onChange = { vm.setSelectedTiltY(it) })
-                SliderRow("Miring atas / bawah", sel.rotX.coerceIn(-70f, 70f), -70f..70f, onChange = { vm.setSelectedTiltX(it) })
-            }
+                },
+            )
+            Tab(
+                selected = selectedTab == EditorTab.STICKER,
+                onClick = { selectedTab = EditorTab.STICKER },
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.Star, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Stiker Bintang")
+                    }
+                },
+            )
+            Tab(
+                selected = selectedTab == EditorTab.CANVAS,
+                onClick = { selectedTab = EditorTab.CANVAS },
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.AspectRatio, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Kanvas")
+                    }
+                },
+            )
+        }
 
-            if (sel.kind == ElementKind.CARD) {
-                val card = vm.cards.getOrNull(sel.refIndex)
-                if (card != null) {
-                    SliderRow("Posisi progress lagu", card.progress, 0f..1f, onChange = {
-                        vm.updateCardProgress(sel.refIndex, it)
-                    })
-                    Row(
-                        Modifier.horizontalScroll(rememberScrollState()),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        Box(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 6.dp),
+        ) {
+            when (selectedTab) {
+                EditorTab.ELEMENT -> {
+                    Column(
+                        Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        FilterChip(
-                            selected = card.color == null,
-                            onClick = { vm.updateCardColor(sel.refIndex, null) },
-                            label = { Text("Otomatis") },
-                        )
-                        CARD_COLOR_PRESETS.forEach { c ->
+                        if (sel == null) {
                             Box(
                                 Modifier
-                                    .size(32.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(c))
-                                    .border(
-                                        if (card.color == c) 3.dp else 1.dp,
-                                        if (card.color == c) MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.outline,
-                                        CircleShape,
+                                    .fillMaxSize()
+                                    .padding(16.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    "Ketuk elemen kartu, foto, atau stiker di poster untuk mengatur posisi, ukuran, dan rotasi. Satu jari menggeser, dua jari untuk zoom & memutar.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        } else {
+                            val kindLabel = when (sel.kind) {
+                                ElementKind.CARD -> "Kartu lagu"
+                                ElementKind.CUTOUT -> "Foto cutout"
+                                ElementKind.BACKGROUND -> "Background"
+                                ElementKind.STICKER -> "Stiker Bintang"
+                            }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Text(
+                                    kindLabel,
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                IconButton(onClick = { vm.bringForward() }) {
+                                    Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "Maju satu layer")
+                                }
+                                IconButton(onClick = { vm.sendBackward() }) {
+                                    Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Mundur satu layer")
+                                }
+                                if (sel.kind == ElementKind.CUTOUT || sel.kind == ElementKind.STICKER) {
+                                    IconButton(onClick = { vm.flipSelected() }) {
+                                        Icon(Icons.Rounded.Flip, contentDescription = "Balik horizontal")
+                                    }
+                                }
+                                IconButton(onClick = { vm.deleteSelected() }) {
+                                    Icon(
+                                        Icons.Rounded.Delete,
+                                        contentDescription = "Hapus elemen",
+                                        tint = MaterialTheme.colorScheme.error,
                                     )
-                                    .clickable { vm.updateCardColor(sel.refIndex, c) }
+                                }
+                            }
+
+                            SliderRow("Ukuran", sel.scale, 0.10f..3.5f, onChange = { vm.setSelectedScale(it) })
+                            SliderRow(
+                                "Sudut (putar)",
+                                sel.rotation.coerceIn(-180f, 180f),
+                                -180f..180f,
+                                onChange = { vm.setSelectedRotation(it) },
                             )
+
+                            if (sel.kind == ElementKind.CARD) {
+                                SliderRow(
+                                    "Miring kiri / kanan",
+                                    sel.rotY.coerceIn(-70f, 70f),
+                                    -70f..70f,
+                                    onChange = { vm.setSelectedTiltY(it) },
+                                )
+                                SliderRow(
+                                    "Miring atas / bawah",
+                                    sel.rotX.coerceIn(-70f, 70f),
+                                    -70f..70f,
+                                    onChange = { vm.setSelectedTiltX(it) },
+                                )
+                                val card = vm.cards.getOrNull(sel.refIndex)
+                                if (card != null) {
+                                    SliderRow(
+                                        "Posisi progress lagu",
+                                        card.progress,
+                                        0f..1f,
+                                        onChange = { vm.updateCardProgress(sel.refIndex, it) },
+                                    )
+                                    Row(
+                                        Modifier.horizontalScroll(rememberScrollState()),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        FilterChip(
+                                            selected = card.color == null,
+                                            onClick = { vm.updateCardColor(sel.refIndex, null) },
+                                            label = { Text("Otomatis") },
+                                        )
+                                        CARD_COLOR_PRESETS.forEach { c ->
+                                            Box(
+                                                Modifier
+                                                    .size(32.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(c))
+                                                    .border(
+                                                        if (card.color == c) 3.dp else 1.dp,
+                                                        if (card.color == c) MaterialTheme.colorScheme.primary
+                                                        else MaterialTheme.colorScheme.outline,
+                                                        CircleShape,
+                                                    )
+                                                    .clickable { vm.updateCardColor(sel.refIndex, c) },
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
-            }
-        }
+                EditorTab.STICKER -> {
+                    Column(
+                        Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            "Ketuk stiker bintang untuk menambahkan ke poster:",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        LazyRow(
+                            Modifier.fillMaxWidth(),
+                            contentPadding = PaddingValues(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            itemsIndexed(STAR_STICKER_RES) { idx, resId ->
+                                Card(
+                                    onClick = {
+                                        vm.addSticker(idx)
+                                        selectedTab = EditorTab.ELEMENT
+                                    },
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                    ),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                    modifier = Modifier.size(72.dp),
+                                ) {
+                                    Box(
+                                        Modifier
+                                            .fillMaxSize()
+                                            .padding(6.dp),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Image(
+                                            painter = painterResource(resId),
+                                            contentDescription = "Stiker bintang ${idx + 1}",
+                                            modifier = Modifier.size(54.dp),
+                                            contentScale = ContentScale.Fit,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        Text(
+                            "Tip: Setelah ditambahkan, geser satu jari untuk pindah posisi atau dua jari untuk memutar & zoom.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline,
+                        )
+                    }
+                }
+                EditorTab.CANVAS -> {
+                    Column(
+                        Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Text("Rasio Poster", style = MaterialTheme.typography.labelMedium)
+                        Row(
+                            Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            if (vm.mode == PosterMode.PHOTO3D) {
+                                FilterChip(
+                                    selected = true,
+                                    onClick = {},
+                                    label = { Text("Potrait 9:16") },
+                                )
+                            } else {
+                                PosterAspect.entries.forEach { a ->
+                                    FilterChip(
+                                        selected = vm.aspect == a,
+                                        onClick = { vm.changeAspect(a) },
+                                        label = { Text(a.label) },
+                                    )
+                                }
+                            }
+                        }
 
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            OutlinedButton(onClick = onShare, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Bagikan") }
-            Button(onClick = onSave, enabled = !busy, modifier = Modifier.weight(1f)) {
-                if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("Simpan")
+                        if (vm.mode == PosterMode.PHOTO3D) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Switch(checked = vm.sparkle, onCheckedChange = { vm.sparkle = it })
+                                Spacer(Modifier.width(8.dp))
+                                Text("Kilau bintang di sudut kartu", style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+
+                        OutlinedButton(
+                            onClick = { vm.resetLayout() },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Icon(Icons.Rounded.RestartAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Reset Posisi Elemen")
+                        }
+                    }
+                }
             }
         }
     }

@@ -29,7 +29,24 @@ enum class PosterAspect(val label: String, val ratio: Float) {
 
 enum class BackgroundMode { PHOTO, SOLID, GRADIENT }
 
-enum class ElementKind { BACKGROUND, CARD, CUTOUT }
+enum class ElementKind { BACKGROUND, CARD, CUTOUT, STICKER }
+
+val STAR_STICKER_RES = listOf(
+    com.nanzbeatles.nanas.R.drawable.sticker_star_01,
+    com.nanzbeatles.nanas.R.drawable.sticker_star_02,
+    com.nanzbeatles.nanas.R.drawable.sticker_star_03,
+    com.nanzbeatles.nanas.R.drawable.sticker_star_04,
+    com.nanzbeatles.nanas.R.drawable.sticker_star_05,
+    com.nanzbeatles.nanas.R.drawable.sticker_star_06,
+    com.nanzbeatles.nanas.R.drawable.sticker_star_07,
+    com.nanzbeatles.nanas.R.drawable.sticker_star_08,
+    com.nanzbeatles.nanas.R.drawable.sticker_star_09,
+    com.nanzbeatles.nanas.R.drawable.sticker_star_10,
+    com.nanzbeatles.nanas.R.drawable.sticker_star_11,
+    com.nanzbeatles.nanas.R.drawable.sticker_star_12,
+    com.nanzbeatles.nanas.R.drawable.sticker_star_13,
+    com.nanzbeatles.nanas.R.drawable.sticker_star_14,
+)
 
 enum class SlotStatus { LOADING, DONE, ERROR }
 
