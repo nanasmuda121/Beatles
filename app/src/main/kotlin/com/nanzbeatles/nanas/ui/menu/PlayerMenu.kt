@@ -234,6 +234,9 @@ fun PlayerMenu(
     if (showAudioStyleDialog) {
         AudioStyleDialog(
             onDismiss = { showAudioStyleDialog = false },
+            onSaveToDevice = {
+                saveToDeviceController.onTriggerSave()
+            },
         )
     }
 
@@ -713,13 +716,11 @@ fun PlayerMenu(
                         }
 
                         else -> {
-                            if (hasOfflineFile) {
-                                add(
-                                    com.nanzbeatles.nanas.utils.buildSaveToDeviceMenuItem(
-                                        controller = saveToDeviceController,
-                                    )
+                            add(
+                                com.nanzbeatles.nanas.utils.buildSaveToDeviceMenuItem(
+                                    controller = saveToDeviceController,
                                 )
-                            }
+                            )
                             add(
                                 Material3MenuItemData(
                                     title = { Text(text = stringResource(R.string.action_download)) },
@@ -953,8 +954,14 @@ fun PlayerMenu(
 }
 
 @Composable
-fun AudioStyleDialog(onDismiss: () -> Unit) {
-    com.nanzbeatles.nanas.ui.player.AudioStyleDialog(onDismiss = onDismiss)
+fun AudioStyleDialog(
+    onDismiss: () -> Unit,
+    onSaveToDevice: (() -> Unit)? = null,
+) {
+    com.nanzbeatles.nanas.ui.player.AudioStyleDialog(
+        onDismiss = onDismiss,
+        onSaveToDevice = onSaveToDevice,
+    )
 }
 
 @OptIn(ExperimentalLayoutApi::class)

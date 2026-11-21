@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
@@ -24,13 +25,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nanzbeatles.nanas.LocalPlayerConnection
+import com.nanzbeatles.nanas.R
 import com.nanzbeatles.nanas.constants.AudioStyleMode
 
 @Composable
-fun AudioStyleDialog(onDismiss: () -> Unit) {
+fun AudioStyleDialog(
+    onDismiss: () -> Unit,
+    onSaveToDevice: (() -> Unit)? = null,
+) {
     val playerConnection = LocalPlayerConnection.current ?: return
     val currentStyle by playerConnection.audioStyleMode.collectAsState()
     val scrollState = rememberScrollState()
@@ -54,6 +60,28 @@ fun AudioStyleDialog(onDismiss: () -> Unit) {
                     text = "Oke",
                     fontWeight = FontWeight.Bold,
                 )
+            }
+        },
+        dismissButton = onSaveToDevice?.let { saveAction ->
+            {
+                TextButton(
+                    onClick = {
+                        onDismiss()
+                        saveAction()
+                    },
+                    modifier = Modifier.testTag("audio_style_save_to_device_button"),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.download),
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Simpan ke Perangkat",
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
             }
         },
         text = {
