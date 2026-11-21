@@ -31,6 +31,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.nio.ByteOrder
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.math.abs
@@ -152,9 +153,13 @@ class MlKitSelfieRemover : BackgroundRemover {
         return withContext(Dispatchers.Default) {
             val mw = mask.width
             val mh = mask.height
-            val buf = mask.buffer
+            // PENTING: buffer TensorFlow Lite ML Kit berada dalam format Native Byte Order (Little Endian).
+            // Harus diset nativeOrder() sebelum dibaca agar confidence tidak bernilai 0 / negatif!
+            val buf = mask.buffer.order(ByteOrder.nativeOrder())
+            buf.rewind()
+            val floatBuf = buf.asFloatBuffer()
             val conf = FloatArray(mw * mh)
-            for (i in conf.indices) conf[i] = buf.getFloat(i * 4)
+            floatBuf.get(conf)
             if (mw == bmp.width && mh == bmp.height) conf
             else MaskRefiner.resample(conf, mw, mh, bmp.width, bmp.height)
         }
@@ -163,57 +168,26 @@ class MlKitSelfieRemover : BackgroundRemover {
     override suspend fun confidence(bitmap: Bitmap): FloatArray {
         val w = bitmap.width
         val h = bitmap.height
-        val pass1 = runRawMask(bitmap)
+        val pass1 = try {
+            runRawMask(bitmap)
+        } catch (_: Exception) {
+            FloatArray(w * h)
+        }
 
-        // Cari bounding box karakter utama pada resolusi coarse supaya cepat
-        val roi = withContext(Dispatchers.Default) {
-            MaskRefiner.findMainSubjectBox(pass1, w, h)
-        } ?: return pass1
+        var maxConf = 0f
+        for (c in pass1) {
+            if (c > maxConf) maxConf = c
+        }
 
-        val rx0 = roi[0]
-        val ry0 = roi[1]
-        val rx1 = roi[2]
-        val ry1 = roi[3]
-        val rw = rx1 - rx0 + 1
-        val rh = ry1 - ry0 + 1
-
-        // Jika ROI sudah mencakup hampir seluruh gambar (>92%), pass1 saja sudah maksimal
-        if (rw >= w * 0.92f && rh >= h * 0.92f) {
+        // Jika model neural network mendeteksi subjek (confidence >= 0.22)
+        if (maxConf >= 0.22f) {
             return pass1
         }
 
-        // Tahap 2: crop area karakter utama dan jalankan segmentasi presisi tinggi
-        val cropped = Bitmap.createBitmap(bitmap, rx0, ry0, rw, rh)
-        val pass2Crop = try {
-            runRawMask(cropped)
-        } finally {
-            if (cropped !== bitmap) cropped.recycle()
-        }
-
+        // Fallback: Segmentasi berbasis kontras warna latar belakang sudut jika ML Kit tidak mendeteksi manusia
+        // (misal gambar kartun/anime, stiker, atau latar studio)
         return withContext(Dispatchers.Default) {
-            val combined = pass1.copyOf()
-            val feather = max(8f, min(rw, rh) * 0.05f)
-            for (y in ry0..ry1) {
-                val cy = y - ry0
-                val rowFull = y * w
-                val rowCrop = cy * rw
-                for (x in rx0..rx1) {
-                    val cx = x - rx0
-                    val c1 = pass1[rowFull + x]
-                    val c2 = pass2Crop[rowCrop + cx]
-                    val isBorder = (x <= rx0 + feather || x >= rx1 - feather || y <= ry0 + feather || y >= ry1 - feather)
-                    val blended = if (!isBorder) {
-                        max(c1, c2)
-                    } else {
-                        val dxBorder = min(x - rx0, rx1 - x).toFloat()
-                        val dyBorder = min(y - ry0, ry1 - y).toFloat()
-                        val wEdge = (min(dxBorder, dyBorder) / feather).coerceIn(0f, 1f)
-                        c2 * wEdge + c1 * (1f - wEdge)
-                    }
-                    combined[rowFull + x] = max(c1, blended)
-                }
-            }
-            combined
+            MaskRefiner.fallbackColorSegmentation(bitmap)
         }
     }
 
@@ -255,6 +229,52 @@ object MaskRefiner {
             }
         }
         return out
+    }
+
+    /**
+     * Fallback cerdas pemisahan background berbasis analisis warna latar sudut gambar:
+     * Digunakan jika foto bukan selfie manusia (misal: stiker anime, kartun, objek/cover, atau foto gelap).
+     */
+    fun fallbackColorSegmentation(bitmap: Bitmap): FloatArray {
+        val w = bitmap.width
+        val h = bitmap.height
+        val n = w * h
+        val pixels = IntArray(n)
+        bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
+
+        val corners = listOf(
+            pixels[0],
+            pixels[min(w - 1, 15)],
+            pixels[w - 1],
+            pixels[(h - 1) * w],
+            pixels[(h - 1) * w + w - 1]
+        )
+        var avgR = 0f
+        var avgG = 0f
+        var avgB = 0f
+        for (c in corners) {
+            avgR += ((c shr 16) and 255).toFloat()
+            avgG += ((c shr 8) and 255).toFloat()
+            avgB += (c and 255).toFloat()
+        }
+        avgR /= corners.size
+        avgG /= corners.size
+        avgB /= corners.size
+
+        val conf = FloatArray(n)
+        for (i in 0 until n) {
+            val c = pixels[i]
+            val pr = ((c shr 16) and 255).toFloat()
+            val pg = ((c shr 8) and 255).toFloat()
+            val pb = (c and 255).toFloat()
+            val dist = sqrt(
+                2.1f * (pr - avgR) * (pr - avgR) +
+                    4.0f * (pg - avgG) * (pg - avgG) +
+                    1.9f * (pb - avgB) * (pb - avgB)
+            )
+            conf[i] = smoothstep(20f, 60f, dist)
+        }
+        return conf
     }
 
     /** Box filter (rata-rata jendela (2r+1)^2, tepi dinormalisasi), O(n). */
@@ -635,9 +655,15 @@ object MaskRefiner {
             val l = bridgeComp.labels[it]
             if (l != 0 && keepBridge[l]) 1f else 0f
         }
-        val nearKept = boxFilter(keptMask, w, h, 3)
-        for (i in 0 until n) {
-            if (nearKept[i] <= 0.001f) alpha[i] = 0f
+        var hasKept = false
+        for (v in keptMask) {
+            if (v > 0f) { hasKept = true; break }
+        }
+        if (hasKept) {
+            val nearKept = boxFilter(keptMask, w, h, 3)
+            for (i in 0 until n) {
+                if (nearKept[i] <= 0.001f) alpha[i] = 0f
+            }
         }
 
         // 2. Pada threshold ketat (0.48f), buang serpihan/pulau kecil yang lepas dari tubuh
@@ -880,15 +906,35 @@ class CutoutEditor private constructor(
     }
 
     companion object {
-        /** Proses lengkap di background thread: segmentasi 2-tahap + penghalusan warna + defringe. */
+        /** Proses lengkap di background thread: segmentasi presisi + penghalusan warna + defringe. */
         suspend fun create(original: Bitmap, remover: BackgroundRemover): CutoutEditor {
-            val conf = remover.confidence(original)
+            val w = original.width
+            val h = original.height
+            // Skala ke batas 800px untuk inferensi cepat & hemat memori, lalu upsample mask
+            val maxSide = max(w, h)
+            val scaleDown = if (maxSide > 800) 800f / maxSide else 1f
+            val scaledBmp = if (scaleDown < 0.99f) {
+                Bitmap.createScaledBitmap(
+                    original,
+                    max(1, (w * scaleDown).toInt()),
+                    max(1, (h * scaleDown).toInt()),
+                    true
+                )
+            } else original
+
+            val confScaled = remover.confidence(scaledBmp)
+            val fullConf = if (scaledBmp !== original) {
+                val up = MaskRefiner.resample(confScaled, scaledBmp.width, scaledBmp.height, w, h)
+                scaledBmp.recycle()
+                up
+            } else {
+                confScaled
+            }
+
             return withContext(Dispatchers.Default) {
-                val w = original.width
-                val h = original.height
                 val pixels = IntArray(w * h)
                 original.getPixels(pixels, 0, w, 0, 0, w, h)
-                val base = MaskRefiner.refine(pixels, conf, w, h)
+                val base = MaskRefiner.refine(pixels, fullConf, w, h)
                 val clean = MaskRefiner.defringe(pixels, base, w, h)
                 CutoutEditor(w, h, clean, base)
             }

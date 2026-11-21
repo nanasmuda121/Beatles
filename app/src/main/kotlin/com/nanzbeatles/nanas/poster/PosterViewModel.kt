@@ -281,11 +281,11 @@ class PosterViewModel @Inject constructor(
                     slot.original = original
                     try {
                         slot.editor = CutoutEditor.create(original, remover)
-                    } catch (e: Exception) {
-                        // Segmentasi gagal: foto tetap bisa dipakai apa adanya.
+                        slot.keepOriginal = false
+                    } catch (e: Throwable) {
                         slot.editor = null
-                        slot.keepOriginal = true
-                        slot.error = "Hapus background gagal, foto dipakai apa adanya."
+                        slot.keepOriginal = false
+                        slot.error = "Gagal memproses otomatis: ${e.message ?: "Error"}"
                     }
                     slot.status = SlotStatus.DONE
                 } catch (e: OutOfMemoryError) {
