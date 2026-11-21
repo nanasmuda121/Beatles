@@ -520,8 +520,8 @@ private fun CutoutStep(vm: PosterViewModel) {
                         }
                     ) { Icon(Icons.Rounded.RestartAlt, contentDescription = "Reset ke hasil otomatis") }
                 }
-                SliderRow("Ukuran kuas", brushDp, 8f..80f) { brushDp = it }
-                SliderRow("Kekerasan kuas", hardness, 0f..1f) { hardness = it }
+                SliderRow("Ukuran kuas", brushDp, 8f..80f, onChange = { brushDp = it })
+                SliderRow("Kekerasan kuas", hardness, 0f..1f, onChange = { hardness = it })
                 SliderRow(
                     label = "Tepi (kecilkan / besarkan)",
                     value = edge,
