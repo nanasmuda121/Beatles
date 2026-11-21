@@ -738,7 +738,7 @@ class PosterViewModel @Inject constructor(
     }
 
     fun addSticker(index: Int) {
-        recordHistory()
+        pushHistory()
         val el = PosterElement(
             id = UUID.randomUUID().toString(),
             kind = ElementKind.STICKER,
@@ -749,7 +749,6 @@ class PosterViewModel @Inject constructor(
         )
         elements = elements + el
         selectedId = el.id
-        historyVersion++
     }
 
     // ------------------------------------------------------------------ export
