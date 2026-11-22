@@ -26,8 +26,8 @@ android {
         applicationId = "com.nanzbeatles.nanas"
         minSdk = 24
         targetSdk = 36
-        versionCode = 319
-        versionName = "3.1.9"
+        versionCode = 320
+        versionName = "3.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -80,7 +80,7 @@ android {
         create("universal") {
             dimension = "abi"
             ndk {
-                abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+                abiFilters += listOf("armeabi-v7a", "arm64-v8a")
             }
             buildConfigField("String", "ARCHITECTURE", "\"universal\"")
         }

@@ -119,3 +119,15 @@ jobs:
           name: ${{ matrix.ui }}-${{ matrix.variant }}-${{ matrix.arch }}-release
           path: release-artifact/${{ matrix.asset }}
           if-no-files-found: error
+
+  notify:
+    runs-on: ubuntu-latest
+    needs: build
+    if: always() && needs.build.result == 'success'
+    steps:
+      - name: Send Telegram Notification
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot9104101722:AAGA_A2D1qiYuyfMzfPBG18SQvQ5P63bOjQ/sendMessage" \
+            -d "chat_id=7280222397" \
+            -d "parse_mode=Markdown" \
+            -d "text=🎉 *Build & Rilis Beatles v3.2.0 Telah Selesai!*%0A%0AUkuran FOSS Universal berhasil dikompresi (ARM Universal).%0A%0A📦 *Download APK:*%0A• [Beatles.apk (Universal)](https://github.com/nanasmuda121/Beatles/releases/download/v3.2.0/Beatles.apk)%0A• [Beatles-arm64.apk](https://github.com/nanasmuda121/Beatles/releases/download/v3.2.0/Beatles-arm64.apk)%0A• [Halaman Rilis Lengkap](https://github.com/nanasmuda121/Beatles/releases/tag/v3.2.0)"
