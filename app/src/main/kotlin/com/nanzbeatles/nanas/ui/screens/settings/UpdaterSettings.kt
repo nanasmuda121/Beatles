@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -31,6 +30,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -39,18 +39,15 @@ import com.nanzbeatles.nanas.BuildConfig
 import com.nanzbeatles.nanas.LocalPlayerAwareWindowInsets
 import com.nanzbeatles.nanas.R
 import com.nanzbeatles.nanas.constants.CheckForUpdatesKey
-import com.nanzbeatles.nanas.constants.UpdateArchitectureKey
-import com.nanzbeatles.nanas.constants.UpdateNotificationsEnabledKey
-import com.nanzbeatles.nanas.constants.UpdateVariantKey
 import com.nanzbeatles.nanas.ui.component.IconButton
 import com.nanzbeatles.nanas.ui.component.Material3SettingsGroup
 import com.nanzbeatles.nanas.ui.component.Material3SettingsItem
+import com.nanzbeatles.nanas.ui.component.UpdateAvailableDialog
 import com.nanzbeatles.nanas.ui.utils.backToMain
+import com.nanzbeatles.nanas.utils.UpdateInfo
 import com.nanzbeatles.nanas.utils.Updater
 import com.nanzbeatles.nanas.utils.rememberPreference
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -58,35 +55,56 @@ fun UpdaterScreen(
     navController: NavController,
     scrollBehavior: TopAppBarScrollBehavior,
 ) {
+    val context = LocalContext.current
     val (checkForUpdates, onCheckForUpdatesChange) = rememberPreference(CheckForUpdatesKey, true)
-    val (updateNotifications, onUpdateNotificationsChange) = rememberPreference(UpdateNotificationsEnabledKey, true)
-    val defaultVariant = if (BuildConfig.CAST_AVAILABLE) "gms" else "foss"
-    val (updateVariant, onUpdateVariantChange) = rememberPreference(UpdateVariantKey, defaultVariant)
-    val (updateArchitecture, onUpdateArchitectureChange) = rememberPreference(UpdateArchitectureKey, "automatic")
-    
+
     var isChecking by remember { mutableStateOf(false) }
-    var updateAvailable by remember { mutableStateOf(false) }
-    var latestVersion by remember { mutableStateOf<String?>(null) }
+    var checkedUpdateInfo by remember { mutableStateOf(Updater.getCachedUpdateInfo()) }
+    var updateAvailable by remember { mutableStateOf(Updater.hasNewerCachedUpdate(context)) }
+    var hasCheckedOnce by remember { mutableStateOf(checkedUpdateInfo != null) }
     var checkError by remember { mutableStateOf<String?>(null) }
-    
+    var showUpdateDialog by remember { mutableStateOf(false) }
+
     val coroutineScope = rememberCoroutineScope()
 
     fun performManualCheck() {
         coroutineScope.launch {
             isChecking = true
             checkError = null
-            withContext(Dispatchers.IO) {
-                Updater.checkForUpdate(forceRefresh = true).onSuccess { (releaseInfo, hasUpdate) ->
-                    if (releaseInfo != null) {
-                        latestVersion = releaseInfo.versionName
-                        updateAvailable = hasUpdate
+            Updater.checkForUpdateManual(context)
+                .onSuccess { (info, hasUpdate) ->
+                    checkedUpdateInfo = info
+                    updateAvailable = hasUpdate
+                    hasCheckedOnce = true
+                    if (hasUpdate) {
+                        showUpdateDialog = true
                     }
-                }.onFailure {
-                    checkError = "Gagal memeriksa pembaruan: ${it.message}"
                 }
-            }
+                .onFailure {
+                    checkError = it.message ?: "Gagal memeriksa pembaruan"
+                }
             isChecking = false
         }
+    }
+
+    if (showUpdateDialog && checkedUpdateInfo != null && updateAvailable) {
+        val info = checkedUpdateInfo!!
+        UpdateAvailableDialog(
+            updateInfo = info,
+            onUpdate = {
+                showUpdateDialog = false
+                Updater.openUpdateUrl(context, info.url)
+            },
+            onLater = {
+                showUpdateDialog = false
+                coroutineScope.launch {
+                    Updater.dismissUpdateVersion(context, info.versionCode)
+                }
+            },
+            onDismiss = {
+                showUpdateDialog = false
+            },
+        )
     }
 
     Column(
@@ -117,7 +135,7 @@ fun UpdaterScreen(
             items = listOf(
                 Material3SettingsItem(
                     title = {
-                        Text("Versi: ${BuildConfig.VERSION_NAME}")
+                        Text("Versi: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
                     },
                     description = {
                         val arch = BuildConfig.ARCHITECTURE
@@ -131,102 +149,26 @@ fun UpdaterScreen(
                 )
             )
         )
-        
+
         Spacer(Modifier.height(16.dp))
 
         // Auto Update Settings
         Material3SettingsGroup(
             title = "Pengaturan Pembaruan",
-            items = buildList {
-                add(
-                    Material3SettingsItem(
-                        title = { Text(stringResource(R.string.check_for_updates)) },
-                        icon = painterResource(R.drawable.update),
-                        trailingContent = {
-                            Switch(
-                                checked = checkForUpdates,
-                                onCheckedChange = onCheckForUpdatesChange
-                            )
-                        },
-                        onClick = { onCheckForUpdatesChange(!checkForUpdates) }
-                    )
-                )
-
-                if (checkForUpdates) {
-                    add(
-                        Material3SettingsItem(
-                            title = { Text(stringResource(R.string.update_notifications)) },
-                            icon = painterResource(R.drawable.notification),
-                            trailingContent = {
-                                Switch(
-                                    checked = updateNotifications,
-                                    onCheckedChange = onUpdateNotificationsChange
-                                )
-                            },
-                            onClick = { onUpdateNotificationsChange(!updateNotifications) }
-                        )
-                    )
-                }
-            }
-        )
-
-        Spacer(Modifier.height(16.dp))
-
-        // APK Variant Selection
-        Material3SettingsGroup(
-            title = "Varian APK",
             items = listOf(
                 Material3SettingsItem(
-                    title = { Text("Beatles") },
-                    description = { Text("Versi standar tanpa Google Cast") },
+                    title = { Text(stringResource(R.string.check_for_updates)) },
+                    description = { Text("Periksa versi terbaru secara otomatis saat aplikasi dibuka") },
+                    icon = painterResource(R.drawable.update),
                     trailingContent = {
-                        androidx.compose.material3.RadioButton(
-                            selected = updateVariant == "foss",
-                            onClick = { onUpdateVariantChange("foss") }
+                        Switch(
+                            checked = checkForUpdates,
+                            onCheckedChange = onCheckForUpdatesChange
                         )
                     },
-                    onClick = { onUpdateVariantChange("foss") }
-                ),
-                Material3SettingsItem(
-                    title = { Text("Beatles dengan Google Cast") },
-                    description = { Text("Termasuk dukungan Google Cast") },
-                    trailingContent = {
-                        androidx.compose.material3.RadioButton(
-                            selected = updateVariant == "gms",
-                            onClick = { onUpdateVariantChange("gms") }
-                        )
-                    },
-                    onClick = { onUpdateVariantChange("gms") }
+                    onClick = { onCheckForUpdatesChange(!checkForUpdates) }
                 )
             )
-        )
-
-        Spacer(Modifier.height(16.dp))
-
-        Material3SettingsGroup(
-            title = "Arsitektur APK",
-            items = listOf(
-                "automatic" to "Otomatis / perangkat ini (${BuildConfig.ARCHITECTURE})",
-                "universal" to "Universal",
-                "arm64" to "ARM64 (manual)",
-                "armeabi" to "ARMv7 (armeabi) (manual)",
-                "x86" to "x86 (manual)",
-                "x86_64" to "x86_64 (manual)",
-            ).map { (value, label) ->
-                Material3SettingsItem(
-                    title = { Text(label) },
-                    description = if (value == "automatic" || value == "universal") null else {
-                        { Text("Beralih ke Universal jika APK ini tidak tersedia") }
-                    },
-                    trailingContent = {
-                        androidx.compose.material3.RadioButton(
-                            selected = updateArchitecture == value,
-                            onClick = { onUpdateArchitectureChange(value) },
-                        )
-                    },
-                    onClick = { onUpdateArchitectureChange(value) },
-                )
-            },
         )
 
         Spacer(Modifier.height(16.dp))
@@ -234,35 +176,66 @@ fun UpdaterScreen(
         // Manual Check
         Material3SettingsGroup(
             title = "Periksa Pembaruan",
-            items = listOf(
-                Material3SettingsItem(
-                    icon = painterResource(R.drawable.refresh),
-                    title = { 
-                        if (isChecking) {
-                            Text("Memeriksa pembaruan...")
-                        } else if (latestVersion != null) {
-                            Text("Terbaru: $latestVersion")
+            items = buildList {
+                add(
+                    Material3SettingsItem(
+                        icon = painterResource(R.drawable.refresh),
+                        title = {
+                            when {
+                                isChecking -> Text("Memeriksa pembaruan...")
+                                updateAvailable && checkedUpdateInfo != null ->
+                                    Text("Versi terbaru ${checkedUpdateInfo!!.versionName}")
+                                hasCheckedOnce -> Text("Aplikasi sudah versi terbaru")
+                                else -> Text("Periksa Pembaruan")
+                            }
+                        },
+                        description = if (updateAvailable && checkedUpdateInfo != null) {
+                            {
+                                Text(
+                                    checkedUpdateInfo!!.changelog.ifBlank {
+                                        "Ketuk untuk melihat detail pembaruan"
+                                    }
+                                )
+                            }
                         } else {
-                            Text("Periksa Pembaruan")
+                            null
+                        },
+                        trailingContent = {
+                            if (isChecking) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.padding(end = 16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else if (updateAvailable) {
+                                Icon(
+                                    painter = painterResource(R.drawable.download),
+                                    contentDescription = "Pembaruan tersedia",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        },
+                        onClick = {
+                            if (!isChecking) {
+                                if (updateAvailable && checkedUpdateInfo != null) {
+                                    showUpdateDialog = true
+                                } else {
+                                    performManualCheck()
+                                }
+                            }
                         }
-                    },
-                    trailingContent = {
-                        if (isChecking) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.padding(end = 16.dp),
-                                strokeWidth = 2.dp
-                            )
-                        } else if (updateAvailable) {
-                            Icon(
-                                painter = painterResource(R.drawable.download),
-                                contentDescription = "Pembaruan tersedia",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    },
-                    onClick = { if (!isChecking) performManualCheck() }
+                    )
                 )
-            )
+
+                if (updateAvailable) {
+                    add(
+                        Material3SettingsItem(
+                            icon = painterResource(R.drawable.refresh),
+                            title = { Text("Periksa Ulang") },
+                            onClick = { if (!isChecking) performManualCheck() }
+                        )
+                    )
+                }
+            }
         )
 
         checkError?.let {

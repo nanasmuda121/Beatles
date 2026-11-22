@@ -79,8 +79,6 @@ import com.nanzbeatles.nanas.constants.AccountNameKey
 import com.nanzbeatles.nanas.constants.DataSyncIdKey
 import com.nanzbeatles.nanas.constants.InnerTubeCookieKey
 import com.nanzbeatles.nanas.constants.NewReleaseNotificationsEnabledKey
-import com.nanzbeatles.nanas.constants.UpdateArchitectureKey
-import com.nanzbeatles.nanas.constants.UpdateVariantKey
 import com.nanzbeatles.nanas.constants.UseLoginForBrowse
 import com.nanzbeatles.nanas.constants.VisitorDataKey
 import com.nanzbeatles.nanas.constants.YtmSyncKey
@@ -119,9 +117,6 @@ fun SettingsScreen(
 ) {
     val uriHandler = LocalUriHandler.current
     val context = LocalContext.current
-    val defaultVariant = if (BuildConfig.CAST_AVAILABLE) "gms" else "foss"
-    val (updateVariant, _) = rememberPreference(UpdateVariantKey, defaultVariant)
-    val (updateArchitecture, _) = rememberPreference(UpdateArchitectureKey, "automatic")
     val isAndroid12OrLater = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
     val (accountNamePref, onAccountNameChange) = rememberPreference(AccountNameKey, "")
@@ -330,9 +325,7 @@ fun SettingsScreen(
                         context = context,
                         uriHandler = uriHandler,
                         isAndroid12OrLater = isAndroid12OrLater,
-                        latestVersionName = latestVersionName,
-                        updateVariant = updateVariant,
-                        updateArchitecture = updateArchitecture
+                        latestVersionName = latestVersionName
                     )
                 }
 
@@ -374,9 +367,7 @@ fun SettingsScreen(
                         context = context,
                         uriHandler = uriHandler,
                         isAndroid12OrLater = isAndroid12OrLater,
-                        latestVersionName = latestVersionName,
-                        updateVariant = updateVariant,
-                        updateArchitecture = updateArchitecture
+                        latestVersionName = latestVersionName
                     )
                 }
             }
@@ -849,10 +840,9 @@ private fun SystemSettingsContent(
     context: android.content.Context,
     uriHandler: androidx.compose.ui.platform.UriHandler,
     isAndroid12OrLater: Boolean,
-    latestVersionName: String,
-    updateVariant: String,
-    updateArchitecture: String
+    latestVersionName: String
 ) {
+    val cachedUpdate = remember(latestVersionName) { Updater.getCachedUpdateInfo() }
     Material3SettingsGroup(
         title = stringResource(R.string.settings_section_system),
         items = buildList {
@@ -889,33 +879,32 @@ private fun SystemSettingsContent(
                     onClick = { navController.navigate("settings/updater") }
                 )
             )
-            if (latestVersionName != BuildConfig.VERSION_NAME) {
-                val releaseInfo = Updater.getCachedLatestRelease()
-                val downloadUrl = releaseInfo?.let {
-                    Updater.getDownloadUrlForCurrentVariant(it, updateVariant, updateArchitecture)
-                }
-
-                if (downloadUrl != null) {
-                    add(
-                        Material3SettingsItem(
-                            icon = painterResource(R.drawable.update),
-                            title = {
-                                Text(
-                                    text = stringResource(R.string.new_version_available),
-                                )
-                            },
-                            description = {
-                                Text(
-                                    text = latestVersionName,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            },
-                            showBadge = true,
-                            onClick = { uriHandler.openUri(downloadUrl) }
-                        )
+            if (cachedUpdate != null && Updater.isUpdateAvailable(cachedUpdate, Updater.getInstalledVersionCode(context))) {
+                add(
+                    Material3SettingsItem(
+                        icon = painterResource(R.drawable.update),
+                        title = {
+                            Text(
+                                text = stringResource(R.string.new_version_available),
+                            )
+                        },
+                        description = {
+                            Text(
+                                text = cachedUpdate.versionName,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        showBadge = true,
+                        onClick = {
+                            if (cachedUpdate.hasValidDownloadUrl) {
+                                Updater.openUpdateUrl(context, cachedUpdate.url)
+                            } else {
+                                navController.navigate("settings/updater")
+                            }
+                        }
                     )
-                }
+                )
             }
             add(
                 Material3SettingsItem(

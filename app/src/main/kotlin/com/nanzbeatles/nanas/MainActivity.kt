@@ -136,7 +136,6 @@ import com.nanzbeatles.innertube.models.SongItem
 import com.nanzbeatles.innertube.models.WatchEndpoint
 import com.nanzbeatles.nanas.constants.AppBarHeight
 import com.nanzbeatles.nanas.constants.AppLanguageKey
-import com.nanzbeatles.nanas.constants.LastSeenVersionKey
 import com.nanzbeatles.nanas.constants.CheckForUpdatesKey
 import com.nanzbeatles.nanas.constants.DarkModeKey
 import com.nanzbeatles.nanas.constants.DefaultOpenTabKey
@@ -155,9 +154,6 @@ import com.nanzbeatles.nanas.constants.SelectedThemeColorKey
 import com.nanzbeatles.nanas.constants.SlimNavBarHeight
 import com.nanzbeatles.nanas.constants.SlimNavBarKey
 import com.nanzbeatles.nanas.constants.StopMusicOnTaskClearKey
-import com.nanzbeatles.nanas.constants.UpdateNotificationsEnabledKey
-import com.nanzbeatles.nanas.constants.UpdateArchitectureKey
-import com.nanzbeatles.nanas.constants.UpdateVariantKey
 import com.nanzbeatles.nanas.constants.UseNewMiniPlayerDesignKey
 import com.nanzbeatles.nanas.constants.SelectedFontKey
 import com.nanzbeatles.nanas.constants.FontScaleKey
@@ -179,6 +175,7 @@ import com.nanzbeatles.nanas.ui.component.BottomSheetMenu
 import com.nanzbeatles.nanas.ui.component.BottomSheetPage
 import com.nanzbeatles.nanas.ui.component.LocalBottomSheetPageState
 import com.nanzbeatles.nanas.ui.component.LocalMenuState
+import com.nanzbeatles.nanas.ui.component.UpdateAvailableDialog
 import com.nanzbeatles.nanas.ui.component.rememberBottomSheetState
 import com.nanzbeatles.nanas.ui.component.shimmer.ShimmerTheme
 import com.nanzbeatles.nanas.ui.menu.YouTubeSongMenu
@@ -196,6 +193,7 @@ import com.nanzbeatles.nanas.ui.utils.frostedGlassSurface
 import com.nanzbeatles.nanas.ui.utils.liquidGlassPill
 import com.nanzbeatles.nanas.ui.utils.resetHeightOffset
 import com.nanzbeatles.nanas.utils.SyncUtils
+import com.nanzbeatles.nanas.utils.UpdateInfo
 import com.nanzbeatles.nanas.utils.Updater
 import com.nanzbeatles.nanas.utils.dataStore
 import com.nanzbeatles.nanas.utils.get
@@ -264,6 +262,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var navController: NavHostController
     private var pendingIntent: Intent? = null
     private var latestVersionName by mutableStateOf(BuildConfig.VERSION_NAME)
+    private var pendingUpdateInfo by mutableStateOf<UpdateInfo?>(null)
+    private var hasCheckedUpdateOnLaunch = false
     private var sharedImportUrl by mutableStateOf<String?>(null)
 
     private var playerConnection by mutableStateOf<PlayerConnection?>(null)
@@ -426,66 +426,24 @@ class MainActivity : ComponentActivity() {
         downloadUtil: DownloadUtil,
         syncUtils: SyncUtils,
     ) {
-        val checkForUpdates by rememberPreference(CheckForUpdatesKey, defaultValue = true)
+        // Automatic update check once per app launch (raw GitHub version.json)
+        LaunchedEffect(Unit) {
+            if (hasCheckedUpdateOnLaunch) return@LaunchedEffect
+            hasCheckedUpdateOnLaunch = true
 
-        LaunchedEffect(checkForUpdates) {
-            if (checkForUpdates) {
-                withContext(Dispatchers.IO) {
-                    val updatesEnabled = dataStore.get(CheckForUpdatesKey, true)
-                    val notifEnabled = dataStore.get(UpdateNotificationsEnabledKey, true)
-                    val preferredVariant = dataStore.get(UpdateVariantKey, if (BuildConfig.CAST_AVAILABLE) "gms" else "foss")
-                    val preferredArchitecture = dataStore.get(UpdateArchitectureKey, "automatic")
-                    if (!updatesEnabled) return@withContext
-                    
-                    Updater.checkForUpdate(forceRefresh = true).onSuccess { (releaseInfo, hasUpdate) ->
-                        if (releaseInfo != null) {
-                            // Normalize version name - extract version from formats like "AuraMusic v1.0.4" or "v1.0.4"
-                            val rawVersion = releaseInfo.versionName
-                            val normalizedVersion = try {
-                                // Try to find version pattern (e.g., 1.0.4, 1.0.4.5)
-                                val versionRegex = Regex("(\\d+\\.\\d+(\\.\\d+)?)")
-                                versionRegex.find(rawVersion)?.groupValues?.get(1) ?: rawVersion
-                            } catch (e: Exception) {
-                                rawVersion
-                            }
-                            // Always show badge if there's a new version available
-                            onLatestVersionNameChange(normalizedVersion)
-                            
-                            // If there's a new version available, show notification
-                            if (hasUpdate && notifEnabled) {
-                                val downloadUrl = Updater.getDownloadUrlForCurrentVariant(releaseInfo, preferredVariant, preferredArchitecture)
-                                if (downloadUrl != null) {
-                                    val intent = Intent(Intent.ACTION_VIEW, downloadUrl.toUri())
+            val updatesEnabled = withContext(Dispatchers.IO) {
+                runCatching { dataStore.get(CheckForUpdatesKey, true) }.getOrDefault(true)
+            }
+            if (!updatesEnabled) {
+                onLatestVersionNameChange(BuildConfig.VERSION_NAME)
+                return@LaunchedEffect
+            }
 
-                                    val flags = PendingIntent.FLAG_UPDATE_CURRENT or
-                                        (PendingIntent.FLAG_IMMUTABLE)
-                                    val pending = PendingIntent.getActivity(this@MainActivity, 1001, intent, flags)
-
-                                    val notif = NotificationCompat.Builder(this@MainActivity, "updates")
-                                        .setSmallIcon(R.drawable.ic_notification_icon)
-                                        .setContentTitle(getString(R.string.update_available_title))
-                                        .setContentText("Versi baru ${releaseInfo.versionName} tersedia")
-                                        .setContentIntent(pending)
-                                        .setAutoCancel(true)
-                                        .setPriority(NotificationCompat.PRIORITY_HIGH)
-                                        .build()
-
-                                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-                                        ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-                                    ) {
-                                        NotificationManagerCompat.from(this@MainActivity).notify(1001, notif)
-                                    }
-                                }
-                            }
-                            
-                            // Update last seen version
-                            runBlocking {
-                                dataStore.edit { 
-                                    it[LastSeenVersionKey] = BuildConfig.VERSION_NAME
-                                }
-                            }
-                        }
-                    }
+            val result = Updater.checkForUpdateOnLaunch(this@MainActivity)
+            if (result != null && result.hasUpdate) {
+                onLatestVersionNameChange(result.updateInfo.versionName)
+                if (result.shouldShowDialog && !isFinishing && !isDestroyed) {
+                    pendingUpdateInfo = result.updateInfo
                 }
             } else {
                 onLatestVersionNameChange(BuildConfig.VERSION_NAME)
@@ -1140,7 +1098,7 @@ class MainActivity : ComponentActivity() {
                                                 contentAlignment = Alignment.Center
                                             ) {
                                                 BadgedBox(badge = {
-                                                    if (latestVersionName != BuildConfig.VERSION_NAME) {
+                                                    if (latestVersionName != BuildConfig.VERSION_NAME || Updater.hasNewerCachedUpdate(this@MainActivity)) {
                                                         Badge()
                                                     }
                                                 }) {
@@ -1561,6 +1519,27 @@ class MainActivity : ComponentActivity() {
                                 navController.navigate("artist/$artistBrowseId")
                             }
                         )
+                    }
+
+                    pendingUpdateInfo?.let { updateInfo ->
+                        if (!isFinishing && !isDestroyed) {
+                            UpdateAvailableDialog(
+                                updateInfo = updateInfo,
+                                onUpdate = {
+                                    pendingUpdateInfo = null
+                                    Updater.openUpdateUrl(this@MainActivity, updateInfo.url)
+                                },
+                                onLater = {
+                                    pendingUpdateInfo = null
+                                    lifecycleScope.launch {
+                                        Updater.dismissUpdateVersion(this@MainActivity, updateInfo.versionCode)
+                                    }
+                                },
+                                onDismiss = {
+                                    pendingUpdateInfo = null
+                                },
+                            )
+                        }
                     }
 
                     // Global Spotify Dynamic Island overlay (opt-in, disabled by default)

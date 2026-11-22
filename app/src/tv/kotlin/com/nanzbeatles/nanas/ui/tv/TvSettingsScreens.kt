@@ -717,33 +717,31 @@ import kotlin.math.roundToInt
     val scope = rememberCoroutineScope()
 
     var isChecking by remember { mutableStateOf(false) }
-    var releaseInfo by remember { mutableStateOf<com.nanzbeatles.nanas.utils.ReleaseInfo?>(null) }
-    var hasUpdate by remember { mutableStateOf(false) }
+    var updateInfo by remember { mutableStateOf<com.nanzbeatles.nanas.utils.UpdateInfo?>(com.nanzbeatles.nanas.utils.Updater.getCachedUpdateInfo()) }
+    var hasUpdate by remember { mutableStateOf(com.nanzbeatles.nanas.utils.Updater.hasNewerCachedUpdate(context)) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    fun runCheck(force: Boolean) {
+    fun runCheck() {
         if (isChecking) return
         scope.launch {
             isChecking = true
             error = null
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                com.nanzbeatles.nanas.utils.Updater
-                    .checkForUpdate(forceRefresh = force)
-                    .onSuccess { (info, available) ->
-                        releaseInfo = info
-                        hasUpdate = available
-                    }
-                    .onFailure {
-                        error = it.message ?: "Failed to check for updates"
-                    }
-            }
+            com.nanzbeatles.nanas.utils.Updater
+                .checkForUpdateManual(context)
+                .onSuccess { (info, available) ->
+                    updateInfo = info
+                    hasUpdate = available
+                }
+                .onFailure {
+                    error = it.message ?: "Gagal memeriksa pembaruan"
+                }
             isChecking = false
         }
     }
 
     // Always check on screen open so a freshly published TV release surfaces
     // here without the user having to manually press refresh.
-    LaunchedEffect(Unit) { runCheck(force = false) }
+    LaunchedEffect(Unit) { runCheck() }
 
     LazyColumn(
         modifier = Modifier
@@ -832,28 +830,21 @@ import kotlin.math.roundToInt
                                 color = MaterialTheme.colorScheme.error,
                             )
                         }
-                        releaseInfo == null -> {
+                        updateInfo == null -> {
                             Text(
-                                text = "No release information available.",
+                                text = "Belum ada informasi pembaruan.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         hasUpdate -> {
                             Text(
-                                text = "Update available",
+                                text = "Versi terbaru ${updateInfo?.versionName}",
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary,
                             )
-                            Text(
-                                text = "${releaseInfo?.versionName} • released ${
-                                    releaseInfo?.releaseDate?.take(10) ?: ""
-                                }",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            val notes = releaseInfo?.description?.takeIf { it.isNotBlank() }
+                            val notes = updateInfo?.changelog?.takeIf { it.isNotBlank() }
                             if (notes != null) {
                                 Spacer(Modifier.height(4.dp))
                                 Text(
@@ -866,13 +857,13 @@ import kotlin.math.roundToInt
                         }
                         else -> {
                             Text(
-                                text = "You're on the latest version",
+                                text = "Aplikasi sudah versi terbaru",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
                             Text(
-                                text = "Latest released: ${releaseInfo?.versionName}",
+                                text = "Versi terbaru: ${updateInfo?.versionName}",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -886,26 +877,16 @@ import kotlin.math.roundToInt
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 TvUpdaterButton(
-                    label = if (isChecking) "Checking…" else "Check again",
-                    onClick = { runCheck(force = true) },
+                    label = if (isChecking) "Memeriksa…" else "Periksa Ulang",
+                    onClick = { runCheck() },
                     primary = false,
                 )
-                if (hasUpdate && releaseInfo != null) {
+                if (hasUpdate && updateInfo?.hasValidDownloadUrl == true) {
                     TvUpdaterButton(
-                        label = "Download Beatles Tv",
+                        label = "Update",
                         onClick = {
-                            val info = releaseInfo ?: return@TvUpdaterButton
-                            val url = com.nanzbeatles.nanas.utils.Updater
-                                .getDownloadUrlForCurrentVariant(info, preferredVariant = "tv")
-                            if (url != null) {
-                                runCatching {
-                                    val intent = android.content.Intent(
-                                        android.content.Intent.ACTION_VIEW,
-                                        android.net.Uri.parse(url),
-                                    ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                                    context.startActivity(intent)
-                                }
-                            }
+                            val info = updateInfo ?: return@TvUpdaterButton
+                            com.nanzbeatles.nanas.utils.Updater.openUpdateUrl(context, info.url)
                         },
                         primary = true,
                     )

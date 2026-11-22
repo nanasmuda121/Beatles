@@ -64,8 +64,6 @@ import com.nanzbeatles.nanas.ui.component.InfoLabel
 import com.nanzbeatles.nanas.ui.component.PreferenceEntry
 import com.nanzbeatles.nanas.ui.component.SwitchPreference
 import com.nanzbeatles.nanas.ui.component.TextFieldDialog
-import com.nanzbeatles.nanas.constants.UpdateVariantKey
-import com.nanzbeatles.nanas.constants.UpdateArchitectureKey
 import com.nanzbeatles.nanas.utils.Updater
 import com.nanzbeatles.nanas.utils.rememberPreference
 import com.nanzbeatles.nanas.viewmodels.AccountSettingsViewModel
@@ -79,9 +77,6 @@ fun AccountSettings(
 ) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
-    val defaultVariant = if (BuildConfig.CAST_AVAILABLE) "gms" else "foss"
-    val (updateVariant, _) = rememberPreference(UpdateVariantKey, defaultVariant)
-    val (updateArchitecture, _) = rememberPreference(UpdateArchitectureKey, "automatic")
 
     val (accountNamePref, onAccountNameChange) = rememberPreference(AccountNameKey, "")
     val (accountEmail, onAccountEmailChange) = rememberPreference(AccountEmailKey, "")
@@ -326,7 +321,7 @@ fun AccountSettings(
                 icon = {
                     BadgedBox(
                         badge = {
-                            if (latestVersionName != BuildConfig.VERSION_NAME) {
+                            if (latestVersionName != BuildConfig.VERSION_NAME || Updater.hasNewerCachedUpdate(context)) {
                                 Badge()
                             }
                         }
@@ -345,26 +340,27 @@ fun AccountSettings(
 
             Spacer(Modifier.height(4.dp))
 
-            if (latestVersionName != BuildConfig.VERSION_NAME) {
-                val releaseInfo = Updater.getCachedLatestRelease()
-                val downloadUrl = releaseInfo?.let { Updater.getDownloadUrlForCurrentVariant(it, updateVariant, updateArchitecture) }
-                
-                if (downloadUrl != null) {
-                    PreferenceEntry(
-                        title = {
-                            Text(text = stringResource(R.string.new_version_available))
-                        },
-                        description = latestVersionName,
-                        icon = {
-                            BadgedBox(badge = { Badge() }) {
-                                Icon(painterResource(R.drawable.update), null)
-                            }
-                        },
-                        onClick = {
-                            uriHandler.openUri(downloadUrl)
+            val cachedUpdate = remember(latestVersionName) { Updater.getCachedUpdateInfo() }
+            if (cachedUpdate != null && Updater.isUpdateAvailable(cachedUpdate, Updater.getInstalledVersionCode(context))) {
+                PreferenceEntry(
+                    title = {
+                        Text(text = stringResource(R.string.new_version_available))
+                    },
+                    description = cachedUpdate.versionName,
+                    icon = {
+                        BadgedBox(badge = { Badge() }) {
+                            Icon(painterResource(R.drawable.update), null)
                         }
-                    )
-                }
+                    },
+                    onClick = {
+                        if (cachedUpdate.hasValidDownloadUrl) {
+                            Updater.openUpdateUrl(context, cachedUpdate.url)
+                        } else {
+                            onClose()
+                            navController.navigate("settings/updater")
+                        }
+                    }
+                )
             }
         }
     }

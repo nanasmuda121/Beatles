@@ -18,13 +18,17 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.lifecycleScope
  import com.nanzbeatles.nanas.LocalDatabase
  import com.nanzbeatles.nanas.LocalPlayerConnection
+import com.nanzbeatles.nanas.constants.CheckForUpdatesKey
 import com.nanzbeatles.nanas.constants.DarkModeKey
 import com.nanzbeatles.nanas.constants.DynamicThemeKey
 import com.nanzbeatles.nanas.constants.FontBoldnessKey
@@ -41,20 +45,26 @@ import com.nanzbeatles.nanas.constants.SYSTEM_DEFAULT
  import com.nanzbeatles.nanas.playback.MusicService.MusicBinder
  import com.nanzbeatles.nanas.playback.PlayerConnection
  import com.nanzbeatles.nanas.ui.component.LocalMenuState
+ import com.nanzbeatles.nanas.ui.component.UpdateAvailableDialog
  import com.nanzbeatles.nanas.ui.theme.AuraMusicTheme
 import com.nanzbeatles.nanas.ui.theme.DefaultThemeColor
 import com.nanzbeatles.nanas.ui.screens.settings.DarkMode
 import com.nanzbeatles.nanas.ui.tv.TvApp
 import com.nanzbeatles.nanas.utils.SyncUtils
+import com.nanzbeatles.nanas.utils.UpdateInfo
+import com.nanzbeatles.nanas.utils.Updater
 import com.nanzbeatles.nanas.utils.dataStore
+import com.nanzbeatles.nanas.utils.get
 import com.nanzbeatles.nanas.utils.rememberEnumPreference
 import com.nanzbeatles.nanas.utils.rememberPreference
 import com.nanzbeatles.innertube.YouTube
 import com.nanzbeatles.innertube.models.YouTubeLocale
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.util.Locale
 import javax.inject.Inject
@@ -118,6 +128,8 @@ class TvMainActivity : ComponentActivity() {
 
     private val playerConnectionFlow = MutableStateFlow<PlayerConnection?>(null)
     private var serviceBound = false
+    private var hasCheckedUpdateOnLaunch = false
+    private var pendingUpdateInfo by mutableStateOf<UpdateInfo?>(null)
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -222,9 +234,45 @@ class TvMainActivity : ComponentActivity() {
                       LocalDatabase provides database,
                       LocalPlayerConnection provides playerConnection
                   ) {
+                      LaunchedEffect(Unit) {
+                          if (hasCheckedUpdateOnLaunch) return@LaunchedEffect
+                          hasCheckedUpdateOnLaunch = true
+
+                          val updatesEnabled = withContext(Dispatchers.IO) {
+                              runCatching { dataStore.get(CheckForUpdatesKey, true) }.getOrDefault(true)
+                          }
+                          if (!updatesEnabled) return@LaunchedEffect
+
+                          val result = Updater.checkForUpdateOnLaunch(this@TvMainActivity)
+                          if (result != null && result.hasUpdate && result.shouldShowDialog && !isFinishing && !isDestroyed) {
+                              pendingUpdateInfo = result.updateInfo
+                          }
+                      }
+
                       TvApp(
                           playerConnection = playerConnection,
                       )
+
+                      pendingUpdateInfo?.let { updateInfo ->
+                          if (!isFinishing && !isDestroyed) {
+                              UpdateAvailableDialog(
+                                  updateInfo = updateInfo,
+                                  onUpdate = {
+                                      pendingUpdateInfo = null
+                                      Updater.openUpdateUrl(this@TvMainActivity, updateInfo.url)
+                                  },
+                                  onLater = {
+                                      pendingUpdateInfo = null
+                                      lifecycleScope.launch {
+                                          Updater.dismissUpdateVersion(this@TvMainActivity, updateInfo.versionCode)
+                                      }
+                                  },
+                                  onDismiss = {
+                                      pendingUpdateInfo = null
+                                  },
+                              )
+                          }
+                      }
                   }
               }
           }
