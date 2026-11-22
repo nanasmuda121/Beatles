@@ -595,7 +595,7 @@ private fun CachePlaylistHeader(
                             onCreatePoster = {
                                 com.nanzbeatles.nanas.poster.PosterSession.openFromPlaylist(
                                     name = context.getString(R.string.cached_playlist),
-                                    songs = songs.filter { !it.song.isVideo }.map {
+                                    songs = songs.map {
                                         com.nanzbeatles.nanas.poster.PosterSong(
                                             id = it.song.id,
                                             title = it.song.title,

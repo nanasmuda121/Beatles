@@ -24,10 +24,10 @@ android {
 
     defaultConfig {
         applicationId = "com.nanzbeatles.nanas"
-        minSdk = 23
+        minSdk = 24
         targetSdk = 36
-        versionCode = 318
-        versionName = "3.1.8"
+        versionCode = 319
+        versionName = "3.1.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true

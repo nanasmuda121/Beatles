@@ -58,6 +58,10 @@ class VocalSuppressionAudioProcessor : BaseAudioProcessor() {
 
     @Volatile private var vocalSuppressionEnabled = false
     @Volatile private var suppressionStrength = 1.0f
+    @Volatile private var stemMixerEnabled = false
+    @Volatile private var vocalVolume = 1.0f
+    @Volatile private var instrumentVolume = 1.0f
+    @Volatile private var muteMainForExternalStems = false
 
     private var sampleRate = 44100
     private var channelCount = 2
@@ -114,9 +118,23 @@ class VocalSuppressionAudioProcessor : BaseAudioProcessor() {
         val remaining = inputBuffer.remaining()
         if (remaining == 0) return
 
-        // Pass-through when disabled or for mono sources (centre extraction
-        // requires two distinct channels).
-        if (!vocalSuppressionEnabled || channelCount != 2) {
+        // When external AI-separated stems (from remove.music) are playing in sync,
+        // output silence on the main player so timeline/lyrics/notification stay active without double audio.
+        if (muteMainForExternalStems) {
+            val out = replaceOutputBuffer(remaining)
+            while (out.remaining() >= 2) {
+                out.putShort(0)
+            }
+            while (out.hasRemaining()) {
+                out.put(0)
+            }
+            inputBuffer.position(inputBuffer.limit())
+            out.flip()
+            return
+        }
+
+        val active = vocalSuppressionEnabled || stemMixerEnabled
+        if (!active || channelCount != 2) {
             val out = replaceOutputBuffer(remaining)
             out.put(inputBuffer)
             out.flip()
@@ -139,14 +157,12 @@ class VocalSuppressionAudioProcessor : BaseAudioProcessor() {
 
         val lpB = lpBass!!
         val lpP = lpPresence!!
-        val strength = suppressionStrength
+        val isDualStem = stemMixerEnabled
+        val vVol = if (isDualStem) vocalVolume else (1f - suppressionStrength).coerceIn(0f, 1f)
+        val iVol = if (isDualStem) instrumentVolume else 1f
 
-        // Side make-up gain. ~+2.6 dB. Equal-power compensation when mid is
-        // attenuated would be +3 dB; we stay just under that so reverb tails
-        // aren't pushed forward.
-        val sideGain = 1.35f
-        // Hard cap on RMS make-up so we don't blow up silent passages.
-        val makeupCeiling = 1.45f
+        // Side make-up gain when vocals are suppressed
+        val sideLift = if (iVol > vVol) 1f + 0.32f * (iVol - vVol).coerceIn(0f, 1f) else 1f
 
         val gSmooth = gainSmoothCoeff
         val invNorm = 1f / 32768f
@@ -169,38 +185,30 @@ class VocalSuppressionAudioProcessor : BaseAudioProcessor() {
             val aE = envAir.process(abs(air))
             val sE = envSide.process(abs(side))
 
-            // How "centre-dominant" each band is right now. When a band is
-            // dominated by stereo content we leave it alone — this is what
-            // stops centred snares / panned drums from being gutted.
             val pDom = pE / (pE + 1.2f * sE + 1e-6f)
             val aDom = aE / (aE + 1.8f * sE + 1e-6f)
 
-            val gP = 1f - strength * smoothstep(pDom, 0.55f, 0.85f)
-            val gA = 1f - 0.35f * strength * smoothstep(aDom, 0.75f, 0.95f)
+            val vocalMaskP = smoothstep(pDom, 0.52f, 0.84f)
+            val vocalMaskA = 0.45f * smoothstep(aDom, 0.70f, 0.94f)
 
-            // One-pole smoothing of the suppression gains.
+            val gP = 1f - vocalMaskP
+            val gA = 1f - vocalMaskA
+
+            // One-pole smoothing of the instrument vs vocal split gains.
             smoothedGPresence = gSmooth * smoothedGPresence + (1f - gSmooth) * gP
             smoothedGAir = gSmooth * smoothedGAir + (1f - gSmooth) * gA
 
-            val keptMid = low + smoothedGPresence * presence + smoothedGAir * air
+            // Exact-summing decomposition: instMid + vocalMid == mid
+            val instMid = low + smoothedGPresence * presence + smoothedGAir * air
+            val vocalMid = (1f - smoothedGPresence) * presence + (1f - smoothedGAir) * air
 
-            var rawL = keptMid + sideGain * side
-            var rawR = keptMid - sideGain * side
+            val instL = instMid + sideLift * side
+            val instR = instMid - sideLift * side
 
-            // Short-term RMS loudness make-up.
-            val inPow = 0.5f * (l * l + r * r)
-            val outPow = 0.5f * (rawL * rawL + rawR * rawR)
-            val inE = envInPow.process(inPow)
-            val outE = envOutPow.process(outPow)
-            val target = sqrt((inE + 1e-9f) / (outE + 1e-9f))
-                .coerceIn(1f, makeupCeiling)
-            val makeup = envMakeup.process(target)
+            var rawL = instL * iVol + vocalMid * vVol
+            var rawR = instR * iVol + vocalMid * vVol
 
-            rawL *= makeup
-            rawR *= makeup
-
-            // Soft peak limiter (better than hard clamp — it pulls down both
-            // channels together so the stereo image is preserved).
+            // Soft peak limiter to preserve stereo balance without clipping.
             val peak = max(abs(rawL), abs(rawR))
             if (peak > 0.99f) {
                 val g = 0.99f / peak
@@ -242,11 +250,27 @@ class VocalSuppressionAudioProcessor : BaseAudioProcessor() {
 
     fun disable() {
         vocalSuppressionEnabled = false
+        stemMixerEnabled = false
+        muteMainForExternalStems = false
+        vocalVolume = 1.0f
+        instrumentVolume = 1.0f
         flush()
     }
 
-    fun isEnabled(): Boolean = vocalSuppressionEnabled
+    fun setStemMixer(enabled: Boolean, vocalVol: Float, instrumentVol: Float) {
+        stemMixerEnabled = enabled
+        vocalVolume = vocalVol.coerceIn(0f, 1.5f)
+        instrumentVolume = instrumentVol.coerceIn(0f, 1.5f)
+    }
+
+    fun setMuteMainForExternalStems(mute: Boolean) {
+        muteMainForExternalStems = mute
+    }
+
+    fun isEnabled(): Boolean = vocalSuppressionEnabled || stemMixerEnabled
     fun getSuppressionStrength(): Float = suppressionStrength
+    fun getVocalVolume(): Float = vocalVolume
+    fun getInstrumentVolume(): Float = instrumentVolume
 
     private fun smoothstep(x: Float, e0: Float, e1: Float): Float {
         val t = ((x - e0) / (e1 - e0)).coerceIn(0f, 1f)

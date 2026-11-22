@@ -218,6 +218,20 @@ class EqualizerService @Inject constructor() {
      */
     fun getVocalSuppressionStrength(): Float = vocalSuppressionStrength
 
+    @OptIn(UnstableApi::class)
+    fun setStemMixer(enabled: Boolean, vocalVolume: Float, instrumentVolume: Float) {
+        vocalSuppressionProcessors.forEach { processor ->
+            processor.setStemMixer(enabled, vocalVolume, instrumentVolume)
+        }
+    }
+
+    @OptIn(UnstableApi::class)
+    fun setMuteMainForExternalStems(mute: Boolean) {
+        vocalSuppressionProcessors.forEach { processor ->
+            processor.setMuteMainForExternalStems(mute)
+        }
+    }
+
     /**
      * Release resources (not needed for AudioProcessor, but kept for API compatibility)
      */

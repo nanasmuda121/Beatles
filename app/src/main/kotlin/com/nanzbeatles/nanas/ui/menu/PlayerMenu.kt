@@ -883,6 +883,168 @@ fun PlayerMenu(
                         )
                         add(
                             Material3MenuItemData(
+                                title = {
+                                    val vrState by playerConnection.vocalRemoverState.collectAsState()
+                                    val isCurrentSong = vrState.songId == mediaMetadata.id
+                                    val isCached = (isCurrentSong && vrState.status == com.nanzbeatles.nanas.playback.audio.VocalSeparationStatus.READY_CACHED) ||
+                                        playerConnection.isVocalSeparationCached()
+                                    var wasLoading by remember { mutableStateOf(false) }
+                                    LaunchedEffect(vrState.status, vrState.songId) {
+                                        if (vrState.songId == mediaMetadata.id &&
+                                            vrState.status == com.nanzbeatles.nanas.playback.audio.VocalSeparationStatus.LOADING
+                                        ) {
+                                            wasLoading = true
+                                        } else if (wasLoading &&
+                                            vrState.songId == mediaMetadata.id &&
+                                            vrState.status == com.nanzbeatles.nanas.playback.audio.VocalSeparationStatus.READY_CACHED
+                                        ) {
+                                            wasLoading = false
+                                            onDismiss()
+                                        }
+                                    }
+                                    Text(
+                                        text = when {
+                                            isCurrentSong && vrState.status == com.nanzbeatles.nanas.playback.audio.VocalSeparationStatus.LOADING ->
+                                                "Memisahkan vokal & instrumen (Beta)... (${vrState.progress}%)"
+                                            isCached ->
+                                                "Pisahkan vokal & instrumen (Beta • Cached)"
+                                            else ->
+                                                "Pisahkan vokal & instrumen (Beta)"
+                                        }
+                                    )
+                                },
+                                description = {
+                                    val vrState by playerConnection.vocalRemoverState.collectAsState()
+                                    val isCurrentSong = vrState.songId == mediaMetadata.id
+                                    val isCached = (isCurrentSong && vrState.status == com.nanzbeatles.nanas.playback.audio.VocalSeparationStatus.READY_CACHED) ||
+                                        playerConnection.isVocalSeparationCached()
+                                    Text(
+                                        text = when {
+                                            isCurrentSong && vrState.status == com.nanzbeatles.nanas.playback.audio.VocalSeparationStatus.LOADING ->
+                                                vrState.message.ifBlank { "Memisahkan suara vokal dan instrumen..." }
+                                            isCurrentSong && vrState.active && isCached ->
+                                                "Aktif di lagu ini • Vokal ${(vrState.vocalVolume * 100).toInt()}% • Instrumen ${(vrState.instrumentVolume * 100).toInt()}%"
+                                            isCached ->
+                                                "Tersimpan di cache • Ketuk untuk aktifkan 2 slider di lagu ini"
+                                            else ->
+                                                "Ganti slider volume dengan 2 slider vokal & instrumen untuk lagu ini"
+                                        }
+                                    )
+                                },
+                                icon = {
+                                    val vrState by playerConnection.vocalRemoverState.collectAsState()
+                                    val isCurrentSong = vrState.songId == mediaMetadata.id
+                                    if (isCurrentSong && vrState.status == com.nanzbeatles.nanas.playback.audio.VocalSeparationStatus.LOADING) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(22.dp),
+                                            strokeWidth = 2.4.dp,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    } else {
+                                        Icon(
+                                            painter = painterResource(R.drawable.graphic_eq),
+                                            contentDescription = null,
+                                            tint = if (isCurrentSong && vrState.active) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                            },
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    val vrState = playerConnection.vocalRemoverState.value
+                                    val isCurrentSong = vrState.songId == mediaMetadata.id
+                                    if (!(isCurrentSong && vrState.status == com.nanzbeatles.nanas.playback.audio.VocalSeparationStatus.LOADING)) {
+                                        val alreadyCached = (isCurrentSong && vrState.status == com.nanzbeatles.nanas.playback.audio.VocalSeparationStatus.READY_CACHED) ||
+                                            playerConnection.isVocalSeparationCached()
+                                        playerConnection.toggleVocalInstrumentSeparation()
+                                        if (alreadyCached) {
+                                            onDismiss()
+                                        }
+                                    }
+                                }
+                            )
+                        )
+                        add(
+                            Material3MenuItemData(
+                                title = {
+                                    val vrState by playerConnection.vocalRemoverState.collectAsState()
+                                    Text(
+                                        text = if (vrState.savingVocal) {
+                                            "Mengunduh & menyimpan vokal..."
+                                        } else {
+                                            "Unduh vokal & simpan ke perangkat"
+                                        }
+                                    )
+                                },
+                                description = {
+                                    Text(text = "Simpan audio vokal terpisah ke folder Music/Beatles")
+                                },
+                                icon = {
+                                    val vrState by playerConnection.vocalRemoverState.collectAsState()
+                                    if (vrState.savingVocal) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(22.dp),
+                                            strokeWidth = 2.2.dp,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    } else {
+                                        Icon(
+                                            painter = painterResource(R.drawable.mic),
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    playerConnection.saveVocalStemToDevice()
+                                    onDismiss()
+                                }
+                            )
+                        )
+                        add(
+                            Material3MenuItemData(
+                                title = {
+                                    val vrState by playerConnection.vocalRemoverState.collectAsState()
+                                    Text(
+                                        text = if (vrState.savingInstrument) {
+                                            "Mengunduh & menyimpan instrumen..."
+                                        } else {
+                                            "Unduh instrumen & simpan ke perangkat"
+                                        }
+                                    )
+                                },
+                                description = {
+                                    Text(text = "Simpan audio instrumen terpisah ke folder Music/Beatles")
+                                },
+                                icon = {
+                                    val vrState by playerConnection.vocalRemoverState.collectAsState()
+                                    if (vrState.savingInstrument) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(22.dp),
+                                            strokeWidth = 2.2.dp,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    } else {
+                                        Icon(
+                                            painter = painterResource(R.drawable.music_note),
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    playerConnection.saveInstrumentStemToDevice()
+                                    onDismiss()
+                                }
+                            )
+                        )
+                        add(
+                            Material3MenuItemData(
                                 title = { Text(text = "Gaya suara") },
                                 description = {
                                     val currentStyle by playerConnection.audioStyleMode.collectAsState()

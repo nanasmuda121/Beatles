@@ -562,9 +562,40 @@ import timber.log.Timber
     }
 
     val audioStyleMode = service.audioStyleMode
+    val vocalRemoverState = service.vocalRemoverState
 
     fun setAudioStyleMode(mode: com.nanzbeatles.nanas.constants.AudioStyleMode) {
         service.setAudioStyleMode(mode)
+    }
+
+    fun startVocalInstrumentSeparation() {
+        service.startVocalInstrumentSeparation()
+    }
+
+    fun toggleVocalInstrumentSeparation() {
+        service.toggleVocalInstrumentSeparation()
+    }
+
+    fun deactivateVocalInstrumentSeparation() {
+        service.deactivateVocalInstrumentSeparation()
+    }
+
+    fun isVocalSeparationCached(): Boolean = service.isVocalSeparationCached()
+
+    fun setVocalStemVolume(volume: Float) {
+        service.setVocalStemVolume(volume)
+    }
+
+    fun setInstrumentStemVolume(volume: Float) {
+        service.setInstrumentStemVolume(volume)
+    }
+
+    fun saveVocalStemToDevice() {
+        service.saveVocalStemToDevice()
+    }
+
+    fun saveInstrumentStemToDevice() {
+        service.saveInstrumentStemToDevice()
     }
 
     fun toggleShuffle() {

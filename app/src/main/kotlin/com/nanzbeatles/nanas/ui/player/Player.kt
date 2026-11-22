@@ -242,6 +242,7 @@ fun BottomSheetPlayer(
 
     val isPlaying by playerConnection.isPlaying.collectAsState()
     val audioStyleMode by playerConnection.audioStyleMode.collectAsState()
+    val vocalRemoverState by playerConnection.vocalRemoverState.collectAsState()
     val isKeepScreenOn by rememberPreference(KeepScreenOn, false)
     val keepScreenOn = isPlaying && isKeepScreenOn
 
@@ -249,17 +250,7 @@ fun BottomSheetPlayer(
         val window = (context as? android.app.Activity)?.window
         if (window != null && state.isExpanded) {
             val insetsController = WindowCompat.getInsetsController(window, window.decorView)
-
-            when (effectivePlayerBackground) {
-                PlayerBackgroundStyle.BLUR,
-                PlayerBackgroundStyle.GRADIENT,
-                PlayerBackgroundStyle.ANIMATED_GRADIENT -> {
-                    insetsController.isAppearanceLightStatusBars = false
-                }
-                PlayerBackgroundStyle.DEFAULT -> {
-                    insetsController.isAppearanceLightStatusBars = !useDarkTheme
-                }
-            }
+            insetsController.isAppearanceLightStatusBars = !useDarkTheme
 
             if (keepScreenOn && state.isExpanded)
                 window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -412,7 +403,9 @@ fun BottomSheetPlayer(
 
     val TextBackgroundColor by animateColorAsState(
         targetValue = if (isEditorial) {
-            if (useDarkTheme) Color(0xFFF5F2EB) else Color(0xFF111111)
+            if (useDarkTheme) Color(0xFFF5F2EB) else Color(0xFF18181A)
+        } else if (!useDarkTheme) {
+            MaterialTheme.colorScheme.onBackground
         } else {
             when (effectivePlayerBackground) {
                 PlayerBackgroundStyle.DEFAULT -> MaterialTheme.colorScheme.onBackground
@@ -427,7 +420,20 @@ fun BottomSheetPlayer(
     val (textButtonColor, iconButtonColor) = when {
         isEditorial -> {
             if (useDarkTheme) Pair(Color(0xFFF5F2EB), Color(0xFF08080A))
-            else Pair(Color(0xFF111111), Color(0xFFFBF9F5))
+            else Pair(Color(0xFF18181A), MaterialTheme.colorScheme.background)
+        }
+        !useDarkTheme -> {
+            when (playerButtonsStyle) {
+                PlayerButtonsStyle.DEFAULT -> Pair(Color(0xFF181B22), MaterialTheme.colorScheme.background)
+                PlayerButtonsStyle.PRIMARY -> Pair(
+                    MaterialTheme.colorScheme.primary,
+                    MaterialTheme.colorScheme.onPrimary
+                )
+                PlayerButtonsStyle.TERTIARY -> Pair(
+                    MaterialTheme.colorScheme.tertiary,
+                    MaterialTheme.colorScheme.onTertiary
+                )
+            }
         }
         effectivePlayerBackground == PlayerBackgroundStyle.BLUR ||
             effectivePlayerBackground == PlayerBackgroundStyle.GRADIENT ||
@@ -448,7 +454,7 @@ fun BottomSheetPlayer(
             when (playerButtonsStyle) {
                 PlayerButtonsStyle.DEFAULT ->
                     if (useDarkTheme) Pair(Color.White, Color.Black)
-                    else Pair(Color.Black, Color.White)
+                    else Pair(Color(0xFF181B22), MaterialTheme.colorScheme.background)
                 PlayerButtonsStyle.PRIMARY -> Pair(
                     MaterialTheme.colorScheme.primary,
                     MaterialTheme.colorScheme.onPrimary
@@ -641,8 +647,10 @@ fun BottomSheetPlayer(
         if (useDarkTheme) {
             if (useBlackBackground) Color.Black else Color(0xFF08080A)
         } else {
-            Color(0xFFFBF9F5)
+            MaterialTheme.colorScheme.background
         }
+    } else if (!useDarkTheme) {
+        MaterialTheme.colorScheme.background
     } else {
         when (effectivePlayerBackground) {
             PlayerBackgroundStyle.BLUR,
@@ -757,11 +765,19 @@ fun BottomSheetPlayer(
                                             .fillMaxSize()
                                             .background(
                                                 Brush.verticalGradient(
-                                                    colors = listOf(
-                                                        Color.Black.copy(alpha = 0.45f),
-                                                        Color.Black.copy(alpha = 0.72f),
-                                                        Color(0xFF07080A).copy(alpha = 0.94f)
-                                                    )
+                                                    colors = if (useDarkTheme) {
+                                                        listOf(
+                                                            Color.Black.copy(alpha = 0.45f),
+                                                            Color.Black.copy(alpha = 0.72f),
+                                                            Color(0xFF07080A).copy(alpha = 0.94f)
+                                                        )
+                                                    } else {
+                                                        listOf(
+                                                            bottomSheetBackgroundColor.copy(alpha = 0.58f),
+                                                            bottomSheetBackgroundColor.copy(alpha = 0.82f),
+                                                            bottomSheetBackgroundColor.copy(alpha = 0.96f)
+                                                        )
+                                                    }
                                                 )
                                             )
                                     )
@@ -778,17 +794,18 @@ fun BottomSheetPlayer(
                             label = "gradientBackground"
                         ) { colors ->
                             if (colors.isNotEmpty()) {
+                                val endBase = if (useDarkTheme) Color(0xFF07080A) else bottomSheetBackgroundColor
                                 val gradientColorStops = if (colors.size >= 3) {
                                     arrayOf(
                                         0.0f to colors[0],
                                         0.5f to colors[1],
-                                        1.0f to Color(0xFF07080A)
+                                        1.0f to endBase
                                     )
                                 } else {
                                     arrayOf(
                                         0.0f to colors[0],
                                         0.55f to colors[0].copy(alpha = 0.65f),
-                                        1.0f to Color(0xFF07080A)
+                                        1.0f to endBase
                                     )
                                 }
                                 Box(
@@ -796,7 +813,10 @@ fun BottomSheetPlayer(
                                         .fillMaxSize()
                                         .alpha(backgroundAlpha)
                                         .background(Brush.verticalGradient(colorStops = gradientColorStops))
-                                        .background(Color.Black.copy(alpha = 0.28f))
+                                        .background(
+                                            if (useDarkTheme) Color.Black.copy(alpha = 0.28f)
+                                            else bottomSheetBackgroundColor.copy(alpha = 0.45f)
+                                        )
                                 )
                             }
                         }
@@ -1194,8 +1214,278 @@ fun BottomSheetPlayer(
                 )
             }
 
-            // 3. Inline Volume Slider Row (Shown in New Player Design)
-            if (useNewPlayerDesign) {
+            // 3. Audio Volume / Vocal & Instrument Separation (Beta) Sliders
+            // When Vocal & Instrument Separation is active on the current song, the default volume slider
+            // is replaced directly by the 2 sliders (Vokal & Instrumen).
+            val isVocalSeparationForCurrentSong = vocalRemoverState.active &&
+                (vocalRemoverState.songId == null || vocalRemoverState.songId == mediaMetadata?.id)
+
+            if (isVocalSeparationForCurrentSong) {
+                val stemSliderColors = PlayerSliderColors.getSliderColors(textButtonColor, effectivePlayerBackground, useDarkTheme)
+                Spacer(Modifier.height(4.dp))
+                if (vocalRemoverState.status == com.nanzbeatles.nanas.playback.audio.VocalSeparationStatus.LOADING) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = PlayerHorizontalPadding)
+                            .crystalLiquidGlassSurface(
+                                shape = RoundedCornerShape(18.dp),
+                                isHighlighted = false
+                            )
+                            .padding(horizontal = 14.dp, vertical = 9.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = textButtonColor
+                        )
+                        Text(
+                            text = vocalRemoverState.message.ifBlank { "Memisahkan vokal & instrumen (Beta)..." },
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextBackgroundColor.copy(alpha = 0.90f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "${vocalRemoverState.progress}%",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = textButtonColor
+                        )
+                    }
+                } else if (vocalRemoverState.status == com.nanzbeatles.nanas.playback.audio.VocalSeparationStatus.READY_CACHED) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = PlayerHorizontalPadding)
+                            .crystalLiquidGlassSurface(
+                                shape = RoundedCornerShape(18.dp),
+                                isHighlighted = false
+                            )
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        // Header kecil: Pemisah Vokal & Instrumen (Beta • Cached) + Tombol Unduh Cepat
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 2.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.graphic_eq),
+                                    contentDescription = null,
+                                    tint = textButtonColor,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Text(
+                                    text = "Pemisah Vokal & Instrumen (Beta • Cached)",
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextBackgroundColor.copy(alpha = 0.88f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Text(
+                                text = "Tutup",
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = textButtonColor,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { playerConnection.deactivateVocalInstrumentSeparation() }
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+
+                        // Slider 1: Volume Vokal + tombol unduh vokal
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(28.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.width(82.dp)
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.mic),
+                                    contentDescription = null,
+                                    tint = TextBackgroundColor.copy(alpha = 0.85f),
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(Modifier.width(5.dp))
+                                Text(
+                                    text = "Vokal",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = TextBackgroundColor.copy(alpha = 0.90f),
+                                    maxLines = 1
+                                )
+                            }
+                            Slider(
+                                value = vocalRemoverState.vocalVolume,
+                                valueRange = 0f..1f,
+                                onValueChange = { playerConnection.setVocalStemVolume(it) },
+                                thumb = {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(12.dp)
+                                            .clip(CircleShape)
+                                            .background(textButtonColor)
+                                    )
+                                },
+                                track = { sliderState ->
+                                    SliderDefaults.Track(
+                                        sliderState = sliderState,
+                                        modifier = Modifier.height(4.dp),
+                                        colors = stemSliderColors,
+                                        thumbTrackGapSize = 0.dp
+                                    )
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(26.dp)
+                                    .padding(horizontal = 4.dp)
+                            )
+                            Text(
+                                text = "${(vocalRemoverState.vocalVolume * 100).roundToInt()}%",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = TextBackgroundColor.copy(alpha = 0.78f),
+                                textAlign = TextAlign.End,
+                                maxLines = 1,
+                                modifier = Modifier.width(34.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(26.dp)
+                                    .clip(CircleShape)
+                                    .background(TextBackgroundColor.copy(alpha = 0.08f))
+                                    .clickable(enabled = !vocalRemoverState.savingVocal) {
+                                        playerConnection.saveVocalStemToDevice()
+                                    }
+                            ) {
+                                if (vocalRemoverState.savingVocal) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(13.dp),
+                                        strokeWidth = 1.8.dp,
+                                        color = textButtonColor
+                                    )
+                                } else {
+                                    Icon(
+                                        painter = painterResource(R.drawable.download),
+                                        contentDescription = "Unduh vokal & simpan ke perangkat",
+                                        tint = TextBackgroundColor.copy(alpha = 0.85f),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        // Slider 2: Volume Instrumen + tombol unduh instrumen
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(28.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.width(82.dp)
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.music_note),
+                                    contentDescription = null,
+                                    tint = TextBackgroundColor.copy(alpha = 0.85f),
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(Modifier.width(5.dp))
+                                Text(
+                                    text = "Instrumen",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = TextBackgroundColor.copy(alpha = 0.90f),
+                                    maxLines = 1
+                                )
+                            }
+                            Slider(
+                                value = vocalRemoverState.instrumentVolume,
+                                valueRange = 0f..1f,
+                                onValueChange = { playerConnection.setInstrumentStemVolume(it) },
+                                thumb = {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(12.dp)
+                                            .clip(CircleShape)
+                                            .background(textButtonColor)
+                                    )
+                                },
+                                track = { sliderState ->
+                                    SliderDefaults.Track(
+                                        sliderState = sliderState,
+                                        modifier = Modifier.height(4.dp),
+                                        colors = stemSliderColors,
+                                        thumbTrackGapSize = 0.dp
+                                    )
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(26.dp)
+                                    .padding(horizontal = 4.dp)
+                            )
+                            Text(
+                                text = "${(vocalRemoverState.instrumentVolume * 100).roundToInt()}%",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = TextBackgroundColor.copy(alpha = 0.78f),
+                                textAlign = TextAlign.End,
+                                maxLines = 1,
+                                modifier = Modifier.width(34.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(26.dp)
+                                    .clip(CircleShape)
+                                    .background(TextBackgroundColor.copy(alpha = 0.08f))
+                                    .clickable(enabled = !vocalRemoverState.savingInstrument) {
+                                        playerConnection.saveInstrumentStemToDevice()
+                                    }
+                            ) {
+                                if (vocalRemoverState.savingInstrument) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(13.dp),
+                                        strokeWidth = 1.8.dp,
+                                        color = textButtonColor
+                                    )
+                                } else {
+                                    Icon(
+                                        painter = painterResource(R.drawable.download),
+                                        contentDescription = "Unduh instrumen & simpan ke perangkat",
+                                        tint = TextBackgroundColor.copy(alpha = 0.85f),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if (useNewPlayerDesign) {
                 val currentVolume = if (isCasting) castVolume else playerVolume
                 val sleepFadeMult = playerConnection.service.sleepTimer.fadeVolumeMultiplier
                 val effectiveDisplayVolume = if (isMuted) 0f else (currentVolume * sleepFadeMult).coerceIn(0f, 1f)
@@ -1291,7 +1581,7 @@ fun BottomSheetPlayer(
                     .padding(horizontal = 6.dp, vertical = 4.dp)
             ) {
                 AudioStyleMode.entries.forEach { mode ->
-                    val isSelectedMode = audioStyleMode == mode
+                    val isSelectedMode = !isVocalSeparationForCurrentSong && audioStyleMode == mode
                     val modeFgColor = if (isSelectedMode) {
                         if (isEditorial) iconButtonColor else TextBackgroundColor
                     } else {

@@ -85,15 +85,22 @@ private fun fmtTime(seconds: Int): String {
 }
 
 /**
- * Kartu pemutar musik Mode 1 (100% mirip referensi):
- * - Kaca akrilik gelap transparan (smoked glass acrylic) dengan border putih glowing
- * - Cover album di kiri dengan bingkai putih membulat
- * - Label brand "~ Beatles" + judul tebal + artis + ikon hati (♡)
+ * Kartu pemutar musik Mode 1 (100% mirip referensi kartu kaca akrilik Beatles):
+ * - Kaca akrilik gelap transparan (smoked glass acrylic) dengan border putih glowing + rim dalam
+ * - Cover album di kiri dengan bingkai putih membulat glowing
+ * - Label brand gelombang (~) + "Beatles" + judul tebal + artis + ikon hati (♡)
  * - Slider progress dengan titik bulatan putih (thumb) + durasi MM:SS
  * - Tombol kontrol pemutar lengkap: Shuffle, Rewind, Pause, FastForward, Repeat
+ * - Baris pengatur volume di bagian bawah (VolumeMute - bar slider - VolumeUp)
+ * - Kilau bintang (starflare) di sudut & tepi kartu
  */
 @Composable
-fun PosterCard(card: PosterCardData, widthPx: Float, modifier: Modifier = Modifier) {
+fun PosterCard(
+    card: PosterCardData,
+    widthPx: Float,
+    sparkle: Boolean = true,
+    modifier: Modifier = Modifier,
+) {
     val density = LocalDensity.current
     fun sp(f: Float) = with(density) { (widthPx * f).toSp() }
     fun dp(f: Float): Dp = with(density) { (widthPx * f).toDp() }
@@ -102,224 +109,340 @@ fun PosterCard(card: PosterCardData, widthPx: Float, modifier: Modifier = Modifi
     val cardBg = if (baseColor != null) {
         baseColor.copy(alpha = 0.88f)
     } else {
-        Color(0xDD121318) // Smoked glass acrylic transparan elegan
+        Color(0xE0111216) // Smoked glass acrylic transparan elegan sesuai referensi
     }
     val textColor = Color.White
-    val cornerRadius = dp(0.080f)
+    val cornerRadius = dp(0.082f)
     val shape = RoundedCornerShape(cornerRadius)
     val total = card.song.durationSec
     val elapsed = (total * card.progress).roundToInt()
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .clip(shape)
-            .background(cardBg)
-            .border(
-                BorderStroke(
-                    dp(0.008f),
+    Box(modifier = modifier.fillMaxSize()) {
+        // Layer ketebalan bezel kaca 3D di belakang kartu
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .offset(x = dp(0.008f), y = dp(-0.006f))
+                .clip(shape)
+                .background(
                     Brush.linearGradient(
-                        listOf(
-                            Color.White.copy(alpha = 0.95f),
-                            Color.White.copy(alpha = 0.45f),
-                            Color.White.copy(alpha = 0.90f),
+                        colors = listOf(
+                            Color(0xFFB8BDC7).copy(alpha = 0.70f),
+                            Color(0xFF565A62).copy(alpha = 0.65f),
+                            Color(0xFF2B2E34).copy(alpha = 0.70f),
                         )
                     )
-                ),
-                shape
-            )
-            .padding(horizontal = dp(0.048f), vertical = dp(0.040f)),
-    ) {
-        // Efek pantulan cahaya kaca diagonal lembut
-        Canvas(Modifier.fillMaxSize()) {
-            val sheen = Path().apply {
-                moveTo(size.width * 0.15f, 0f)
-                lineTo(size.width * 0.55f, 0f)
-                lineTo(size.width * 0.25f, size.height)
-                lineTo(0f, size.height)
-                close()
-            }
-            drawPath(
-                path = sheen,
-                brush = Brush.linearGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = 0.08f),
-                        Color.Transparent,
-                    ),
                 )
-            )
-        }
+        )
 
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.SpaceBetween,
-        ) {
-            // Baris atas: Cover + Info Lagu + Heart
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // Cover dengan frame putih glowing
-                Box(
-                    modifier = Modifier
-                        .size(dp(0.24f))
-                        .clip(RoundedCornerShape(dp(0.040f)))
-                        .border(BorderStroke(dp(0.006f), Color.White.copy(alpha = 0.88f)), RoundedCornerShape(dp(0.040f)))
-                        .background(Color(0x33FFFFFF)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    val cover = card.cover
-                    if (cover != null) {
-                        Image(
-                            bitmap = cover.asImageBitmap(),
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize(),
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .shadow(dp(0.035f), shape, clip = false)
+                .clip(shape)
+                .background(cardBg)
+                .border(
+                    BorderStroke(
+                        dp(0.009f),
+                        Brush.linearGradient(
+                            listOf(
+                                Color.White.copy(alpha = 0.98f),
+                                Color.White.copy(alpha = 0.45f),
+                                Color.White.copy(alpha = 0.96f),
+                            )
                         )
-                    } else {
-                        Icon(
-                            Icons.Rounded.MusicNote,
-                            contentDescription = null,
-                            tint = textColor.copy(alpha = 0.7f),
-                            modifier = Modifier.size(dp(0.11f)),
+                    ),
+                    shape
+                )
+                .padding(horizontal = dp(0.046f), vertical = dp(0.034f)),
+        ) {
+            // Efek pantulan cahaya kaca diagonal + rim cahaya dalam
+            Canvas(Modifier.fillMaxSize()) {
+                val sheen = Path().apply {
+                    moveTo(size.width * 0.14f, 0f)
+                    lineTo(size.width * 0.56f, 0f)
+                    lineTo(size.width * 0.24f, size.height)
+                    lineTo(0f, size.height)
+                    close()
+                }
+                drawPath(
+                    path = sheen,
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.10f),
+                            Color.White.copy(alpha = 0.02f),
+                            Color.Transparent,
+                        ),
+                    )
+                )
+            }
+
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.SpaceBetween,
+            ) {
+                // Baris atas: Cover + Info Lagu + Heart
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // Cover dengan frame putih glowing
+                    Box(
+                        modifier = Modifier
+                            .size(dp(0.225f))
+                            .clip(RoundedCornerShape(dp(0.042f)))
+                            .border(
+                                BorderStroke(dp(0.0065f), Color.White.copy(alpha = 0.94f)),
+                                RoundedCornerShape(dp(0.042f))
+                            )
+                            .background(Color(0x33FFFFFF)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        val cover = card.cover
+                        if (cover != null) {
+                            Image(
+                                bitmap = cover.asImageBitmap(),
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        } else {
+                            Icon(
+                                Icons.Rounded.MusicNote,
+                                contentDescription = null,
+                                tint = textColor.copy(alpha = 0.7f),
+                                modifier = Modifier.size(dp(0.105f)),
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.width(dp(0.028f)))
+
+                    Column(Modifier.weight(1f)) {
+                        // Badge gelombang ~ Beatles
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            BrandWaveIcon(
+                                color = textColor.copy(alpha = 0.80f),
+                                modifier = Modifier.size(width = dp(0.036f), height = dp(0.018f)),
+                            )
+                            Spacer(Modifier.width(dp(0.012f)))
+                            Text(
+                                text = "Beatles",
+                                color = textColor.copy(alpha = 0.80f),
+                                fontSize = sp(0.034f),
+                                fontWeight = FontWeight.Medium,
+                            )
+                        }
+                        Text(
+                            text = card.song.title,
+                            color = textColor,
+                            fontSize = sp(0.052f),
+                            fontWeight = FontWeight.ExtraBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = card.song.artist,
+                            color = textColor.copy(alpha = 0.74f),
+                            fontSize = sp(0.038f),
+                            fontWeight = FontWeight.Normal,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
+
+                    Icon(
+                        Icons.Rounded.FavoriteBorder,
+                        contentDescription = null,
+                        tint = textColor.copy(alpha = 0.92f),
+                        modifier = Modifier.size(dp(0.062f)),
+                    )
                 }
 
-                Spacer(Modifier.width(dp(0.030f)))
-
-                Column(Modifier.weight(1f)) {
-                    // Badge ~ Beatles
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "~",
-                            color = textColor.copy(alpha = 0.80f),
-                            fontSize = sp(0.045f),
-                            fontWeight = FontWeight.Bold,
+                // Progress bar dengan thumb bulat & timestamps
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Canvas(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(dp(0.030f))
+                    ) {
+                        val y = size.height / 2f
+                        val stroke = size.height * 0.22f
+                        drawLine(
+                            textColor.copy(alpha = 0.28f),
+                            Offset(0f, y),
+                            Offset(size.width, y),
+                            stroke,
+                            StrokeCap.Round,
                         )
-                        Spacer(Modifier.width(dp(0.010f)))
+                        val x = size.width * card.progress.coerceIn(0f, 1f)
+                        drawLine(
+                            textColor,
+                            Offset(0f, y),
+                            Offset(x, y),
+                            stroke,
+                            StrokeCap.Round,
+                        )
+                        drawCircle(
+                            textColor,
+                            radius = size.height * 0.38f,
+                            center = Offset(x, y),
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
                         Text(
-                            text = "Beatles",
-                            color = textColor.copy(alpha = 0.80f),
-                            fontSize = sp(0.038f),
+                            text = fmtMs(elapsed),
+                            color = textColor.copy(alpha = 0.78f),
+                            fontSize = sp(0.033f),
+                            fontWeight = FontWeight.Medium,
+                        )
+                        Text(
+                            text = fmtMs(total),
+                            color = textColor.copy(alpha = 0.78f),
+                            fontSize = sp(0.033f),
                             fontWeight = FontWeight.Medium,
                         )
                     }
-                    Text(
-                        text = card.song.title,
-                        color = textColor,
-                        fontSize = sp(0.054f),
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = card.song.artist,
-                        color = textColor.copy(alpha = 0.70f),
-                        fontSize = sp(0.040f),
-                        fontWeight = FontWeight.Normal,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
                 }
 
-                Icon(
-                    Icons.Rounded.FavoriteBorder,
-                    contentDescription = null,
-                    tint = textColor.copy(alpha = 0.90f),
-                    modifier = Modifier.size(dp(0.065f)),
-                )
-            }
-
-            // Progress bar dengan thumb bulat & timestamps
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Canvas(
-                    Modifier
+                // Tombol kontrol pemutar lengkap: Shuffle, FastRewind, Pause, FastForward, Repeat
+                Row(
+                    modifier = Modifier
                         .fillMaxWidth()
-                        .height(dp(0.035f))
+                        .padding(horizontal = dp(0.02f)),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    val y = size.height / 2f
-                    val stroke = size.height * 0.22f
-                    drawLine(
-                        textColor.copy(alpha = 0.28f),
-                        Offset(0f, y),
-                        Offset(size.width, y),
-                        stroke,
-                        StrokeCap.Round,
+                    Icon(
+                        Icons.Rounded.Shuffle,
+                        contentDescription = null,
+                        tint = textColor.copy(alpha = 0.78f),
+                        modifier = Modifier.size(dp(0.058f)),
                     )
-                    val x = size.width * card.progress.coerceIn(0f, 1f)
-                    drawLine(
-                        textColor,
-                        Offset(0f, y),
-                        Offset(x, y),
-                        stroke,
-                        StrokeCap.Round,
+                    Icon(
+                        Icons.Rounded.FastRewind,
+                        contentDescription = null,
+                        tint = textColor,
+                        modifier = Modifier.size(dp(0.078f)),
                     )
-                    drawCircle(
-                        textColor,
-                        radius = size.height * 0.38f,
-                        center = Offset(x, y),
+                    Icon(
+                        Icons.Rounded.Pause,
+                        contentDescription = null,
+                        tint = textColor,
+                        modifier = Modifier.size(dp(0.102f)),
+                    )
+                    Icon(
+                        Icons.Rounded.FastForward,
+                        contentDescription = null,
+                        tint = textColor,
+                        modifier = Modifier.size(dp(0.078f)),
+                    )
+                    Icon(
+                        Icons.Rounded.Repeat,
+                        contentDescription = null,
+                        tint = textColor.copy(alpha = 0.78f),
+                        modifier = Modifier.size(dp(0.058f)),
                     )
                 }
+
+                // Baris pengatur volume bawah (VolumeMute - slider thumb bulat - VolumeUp) sesuai referensi
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        text = fmtMs(elapsed),
-                        color = textColor.copy(alpha = 0.78f),
-                        fontSize = sp(0.036f),
-                        fontWeight = FontWeight.Medium,
+                    Icon(
+                        Icons.Rounded.VolumeMute,
+                        contentDescription = null,
+                        tint = textColor.copy(alpha = 0.80f),
+                        modifier = Modifier.size(dp(0.042f)),
                     )
-                    Text(
-                        text = fmtMs(total),
-                        color = textColor.copy(alpha = 0.78f),
-                        fontSize = sp(0.036f),
-                        fontWeight = FontWeight.Medium,
+                    Canvas(
+                        Modifier
+                            .weight(1f)
+                            .height(dp(0.024f))
+                            .padding(horizontal = dp(0.016f))
+                    ) {
+                        val y = size.height / 2f
+                        val stroke = size.height * 0.22f
+                        drawLine(
+                            textColor.copy(alpha = 0.28f),
+                            Offset(0f, y),
+                            Offset(size.width, y),
+                            stroke,
+                            StrokeCap.Round,
+                        )
+                        val volX = size.width * 0.64f
+                        drawLine(
+                            textColor.copy(alpha = 0.92f),
+                            Offset(0f, y),
+                            Offset(volX, y),
+                            stroke,
+                            StrokeCap.Round,
+                        )
+                        drawCircle(
+                            color = textColor,
+                            radius = size.height * 0.40f,
+                            center = Offset(volX, y),
+                        )
+                    }
+                    Icon(
+                        Icons.Rounded.VolumeUp,
+                        contentDescription = null,
+                        tint = textColor.copy(alpha = 0.80f),
+                        modifier = Modifier.size(dp(0.042f)),
                     )
                 }
             }
-
-            // Tombol kontrol pemutar lengkap: Shuffle, FastRewind, Pause, FastForward, Repeat
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = dp(0.02f)),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    Icons.Rounded.Shuffle,
-                    contentDescription = null,
-                    tint = textColor.copy(alpha = 0.75f),
-                    modifier = Modifier.size(dp(0.068f)),
-                )
-                Icon(
-                    Icons.Rounded.FastRewind,
-                    contentDescription = null,
-                    tint = textColor,
-                    modifier = Modifier.size(dp(0.085f)),
-                )
-                Icon(
-                    Icons.Rounded.Pause,
-                    contentDescription = null,
-                    tint = textColor,
-                    modifier = Modifier.size(dp(0.115f)),
-                )
-                Icon(
-                    Icons.Rounded.FastForward,
-                    contentDescription = null,
-                    tint = textColor,
-                    modifier = Modifier.size(dp(0.085f)),
-                )
-                Icon(
-                    Icons.Rounded.Repeat,
-                    contentDescription = null,
-                    tint = textColor.copy(alpha = 0.75f),
-                    modifier = Modifier.size(dp(0.068f)),
-                )
-            }
         }
+
+        // Pantulan cahaya optik bercahaya lembut (lebih glow, agak transparan, dan sedikit lebih besar)
+        if (sparkle) {
+            val flareSize = dp(0.185f)
+            val half = flareSize / 2
+            StarFlare(
+                rimAngleDeg = -35f,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = half - dp(0.016f), y = dp(0.012f) - half)
+                    .size(flareSize)
+            )
+            StarFlare(
+                rimAngleDeg = 45f,
+                intensity = 0.78f,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .offset(x = dp(0.018f) - half, y = half - dp(0.012f))
+                    .size(flareSize * 0.84f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun BrandWaveIcon(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val path = Path().apply {
+            val hMid = size.height * 0.55f
+            val amp = size.height * 0.44f
+            moveTo(0f, hMid)
+            cubicTo(
+                size.width * 0.22f, hMid + amp,
+                size.width * 0.36f, hMid - amp,
+                size.width * 0.58f, hMid - amp * 0.35f,
+            )
+            quadraticTo(
+                size.width * 0.78f, hMid + amp * 0.15f,
+                size.width, hMid - amp * 0.25f,
+            )
+        }
+        drawPath(
+            path = path,
+            color = color,
+            style = Stroke(width = size.height * 0.21f, cap = StrokeCap.Round),
+        )
     }
 }
 
@@ -329,15 +452,15 @@ private fun fmtMs(seconds: Int): String {
 }
 
 /**
- * Kartu pemutar vertikal Mode 2 (100% mirip referensi Mode 2):
- * - Frame kaca metalik 3D gelap dengan ketebalan bezel 3D di sisi luar & kilau kaca diagonal
- * - Cover besar 1:1 membulat
+ * Kartu pemutar vertikal Mode 2 (100% mirip referensi Mode 2 & kartu akrilik Beatles):
+ * - Frame kaca akrilik metalik 3D gelap dengan ketebalan bezel 3D di sisi luar & kilau kaca diagonal
+ * - Cover besar 1:1 membulat dengan border putih glowing + kilau bintang di sudut bingkai cover
  * - Baris brand: ikon gelombang (~) + "Beatles"
  * - Judul tebal + artis + ikon hati outline di kanan
- * - Slider progress dengan titik bulatan putih + waktu elapsed & -remaining
- * - Tombol FastRewind, Pause, FastForward
+ * - Slider progress dengan titik bulatan putih + waktu elapsed & durasi
+ * - Tombol Shuffle, FastRewind, Pause, FastForward, Repeat
  * - Slider volume di bagian paling bawah (VolumeMute - bar - VolumeUp)
- * - Kilau bintang (starflare 8-sudut) di sudut kartu yang menembus keluar batas kartu
+ * - Kilau bintang (starflare 8-sudut) di sudut & tepi kartu yang menembus keluar batas kartu
  */
 @Composable
 fun PosterCardVertical(
@@ -356,7 +479,7 @@ fun PosterCardVertical(
     val cardBg = if (baseColor != null) {
         baseColor.copy(alpha = 0.88f)
     } else {
-        Color(0xDD111216) // Translucent smoked acrylic glass persis referensi beatles_player_card.jpg
+        Color(0xE0111216) // Translucent smoked acrylic glass persis referensi kartu Beatles
     }
     val textColor = Color.White
     val cornerRadius = dp(0.095f)
@@ -366,14 +489,14 @@ fun PosterCardVertical(
 
     // Offset ketebalan bezel 3D mengikuti arah kemiringan kartu (kiri vs kanan)
     val bezelShiftX = when {
-        rotY > 2f -> dp(-0.015f)
-        rotY < -2f -> dp(0.015f)
-        else -> dp(0.010f)
+        rotY > 2f -> dp(-0.018f)
+        rotY < -2f -> dp(0.018f)
+        else -> dp(0.012f)
     }
-    val bezelShiftY = dp(-0.008f)
+    val bezelShiftY = dp(-0.010f)
 
     Box(modifier = modifier.fillMaxSize()) {
-        // Layer ketebalan sisi 3D metalik di belakang kartu
+        // Layer ketebalan sisi 3D akrilik metalik di belakang kartu
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -382,38 +505,43 @@ fun PosterCardVertical(
                 .background(
                     Brush.linearGradient(
                         colors = listOf(
-                            Color(0xFF9EA3AB),
-                            Color(0xFF565A61),
+                            Color(0xFFC4C9D2),
+                            Color(0xFF6B7079),
                             Color(0xFF34373D),
                         )
                     )
                 )
+                .border(
+                    width = dp(0.004f),
+                    color = Color.White.copy(alpha = 0.55f),
+                    shape = shape,
+                )
         )
 
-        // Badan utama kartu
+        // Badan utama kartu kaca akrilik
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .shadow(dp(0.045f), shape, clip = false)
+                .shadow(dp(0.050f), shape, clip = false)
                 .clip(shape)
                 .background(cardBg)
                 .border(
-                    width = dp(0.010f),
+                    width = dp(0.011f),
                     brush = Brush.linearGradient(
                         colors = listOf(
-                            Color.White.copy(alpha = 0.95f),
-                            Color.White.copy(alpha = 0.55f),
-                            Color.White.copy(alpha = 0.95f),
+                            Color.White.copy(alpha = 0.98f),
+                            Color.White.copy(alpha = 0.50f),
+                            Color.White.copy(alpha = 0.96f),
                         )
                     ),
                     shape = shape,
                 )
         ) {
-            // Efek pantulan kaca diagonal lembut seperti referensi
+            // Efek pantulan kaca diagonal lembut + inner glass rim
             Canvas(Modifier.fillMaxSize()) {
                 val sheen = Path().apply {
-                    moveTo(size.width * 0.15f, 0f)
-                    lineTo(size.width * 0.62f, 0f)
+                    moveTo(size.width * 0.14f, 0f)
+                    lineTo(size.width * 0.64f, 0f)
                     lineTo(size.width * 0.20f, size.height)
                     lineTo(0f, size.height)
                     close()
@@ -422,134 +550,139 @@ fun PosterCardVertical(
                     path = sheen,
                     brush = Brush.linearGradient(
                         colors = listOf(
-                            Color.White.copy(alpha = 0.08f),
-                            Color.White.copy(alpha = 0.02f),
+                            Color.White.copy(alpha = 0.11f),
+                            Color.White.copy(alpha = 0.03f),
                             Color.Transparent,
                         ),
                         start = Offset(0f, 0f),
-                        end = Offset(size.width, size.height * 0.6f),
+                        end = Offset(size.width, size.height * 0.65f),
                     )
+                )
+
+                // Garis pantulan dalam tipis (inner glass highlight)
+                val inset = size.width * 0.016f
+                drawRoundRect(
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.35f),
+                            Color.Transparent,
+                            Color.White.copy(alpha = 0.25f),
+                        )
+                    ),
+                    topLeft = Offset(inset, inset),
+                    size = Size(size.width - inset * 2, size.height - inset * 2),
+                    cornerRadius = CornerRadius(size.width * 0.082f, size.width * 0.082f),
+                    style = Stroke(width = size.width * 0.003f),
                 )
             }
 
             Column(
                 Modifier
                     .fillMaxSize()
-                    .padding(horizontal = dp(0.062f), vertical = dp(0.058f))
+                    .padding(horizontal = dp(0.058f), vertical = dp(0.048f))
             ) {
-                // Cover Album Besar dengan frame putih glowing persis beatles_player_card.jpg
+                // Cover Album Besar dengan frame putih glowing persis referensi kartu Beatles.
+                // Menggunakan weight(1f) agar area kontrol bawah (Pause, Prev, Next, Volume) selalu tampil 100% utuh dan tidak pernah terpotong.
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .aspectRatio(1f)
-                        .clip(RoundedCornerShape(dp(0.055f)))
-                        .border(
-                            BorderStroke(dp(0.007f), Color.White.copy(alpha = 0.90f)),
-                            RoundedCornerShape(dp(0.055f))
-                        )
-                        .background(Color(0x26FFFFFF)),
-                    contentAlignment = Alignment.Center,
+                        .weight(1f)
                 ) {
-                    val cover = card.cover
-                    if (cover != null) {
-                        Image(
-                            bitmap = cover.asImageBitmap(),
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    } else {
-                        Icon(
-                            Icons.Rounded.MusicNote,
-                            contentDescription = null,
-                            tint = textColor.copy(alpha = 0.7f),
-                            modifier = Modifier.size(dp(0.28f)),
-                        )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(dp(0.055f)))
+                            .border(
+                                BorderStroke(dp(0.008f), Color.White.copy(alpha = 0.94f)),
+                                RoundedCornerShape(dp(0.055f))
+                            )
+                            .background(Color(0x26FFFFFF)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        val cover = card.cover
+                        if (cover != null) {
+                            Image(
+                                bitmap = cover.asImageBitmap(),
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        } else {
+                            Icon(
+                                Icons.Rounded.MusicNote,
+                                contentDescription = null,
+                                tint = textColor.copy(alpha = 0.7f),
+                                modifier = Modifier.size(dp(0.26f)),
+                            )
+                        }
                     }
                 }
 
-                Spacer(Modifier.height(dp(0.032f)))
+                Spacer(Modifier.height(dp(0.024f)))
 
+                // Bagian bawah kartu: Brand + Judul/Artis/Heart + Progress Bar + Tombol Pause/Prev/Next + Volume Bar
                 Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    verticalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(dp(0.016f)),
                 ) {
-                    // Baris "~ Beatles" + Judul + Artis + Ikon Hati
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            // Ikon gelombang (~) persis seperti di referensi
-                            Canvas(Modifier.size(width = dp(0.046f), height = dp(0.024f))) {
-                                val path = Path().apply {
-                                    val hMid = size.height * 0.55f
-                                    val amp = size.height * 0.42f
-                                    moveTo(0f, hMid)
-                                    cubicTo(
-                                        size.width * 0.22f, hMid + amp,
-                                        size.width * 0.35f, hMid - amp,
-                                        size.width * 0.58f, hMid - amp * 0.4f,
-                                    )
-                                    quadraticTo(
-                                        size.width * 0.78f, hMid,
-                                        size.width, hMid - amp * 0.25f,
-                                    )
-                                }
-                                drawPath(
-                                    path = path,
-                                    color = textColor.copy(alpha = 0.78f),
-                                    style = Stroke(width = size.height * 0.20f, cap = StrokeCap.Round),
+                    // 1. Baris "~ Beatles" + Judul + Artis + Ikon Hati
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                BrandWaveIcon(
+                                    color = textColor.copy(alpha = 0.82f),
+                                    modifier = Modifier.size(width = dp(0.044f), height = dp(0.020f)),
+                                )
+                                Spacer(Modifier.width(dp(0.014f)))
+                                Text(
+                                    text = "Beatles",
+                                    color = textColor.copy(alpha = 0.82f),
+                                    fontSize = sp(0.038f),
+                                    lineHeight = sp(0.042f),
+                                    fontWeight = FontWeight.Medium,
                                 )
                             }
-                            Spacer(Modifier.width(dp(0.018f)))
+                            Spacer(Modifier.height(dp(0.004f)))
                             Text(
-                                text = "Beatles",
+                                text = card.song.title,
+                                color = textColor,
+                                fontSize = sp(0.068f),
+                                lineHeight = sp(0.074f),
+                                fontWeight = FontWeight.ExtraBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = card.song.artist,
                                 color = textColor.copy(alpha = 0.78f),
-                                fontSize = sp(0.038f),
-                                fontWeight = FontWeight.Medium,
+                                fontSize = sp(0.045f),
+                                lineHeight = sp(0.050f),
+                                fontWeight = FontWeight.Normal,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
-
-                        Spacer(Modifier.height(dp(0.008f)))
-
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    text = card.song.title,
-                                    color = textColor,
-                                    fontSize = sp(0.074f),
-                                    fontWeight = FontWeight.ExtraBold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                                Text(
-                                    text = card.song.artist,
-                                    color = textColor.copy(alpha = 0.74f),
-                                    fontSize = sp(0.050f),
-                                    fontWeight = FontWeight.Normal,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                            Spacer(Modifier.width(dp(0.02f)))
-                            Icon(
-                                Icons.Rounded.FavoriteBorder,
-                                contentDescription = null,
-                                tint = textColor.copy(alpha = 0.90f),
-                                modifier = Modifier.size(dp(0.072f)),
-                            )
-                        }
+                        Spacer(Modifier.width(dp(0.018f)))
+                        Icon(
+                            Icons.Rounded.FavoriteBorder,
+                            contentDescription = null,
+                            tint = textColor.copy(alpha = 0.95f),
+                            modifier = Modifier.size(dp(0.072f)),
+                        )
                     }
 
-                    // Progress bar dengan titik thumb bulat + durasi kiri & kanan
-                    Column {
+                    // 2. Progress bar dengan titik thumb bulat + durasi kiri & kanan
+                    Column(modifier = Modifier.fillMaxWidth()) {
                         Canvas(
                             Modifier
                                 .fillMaxWidth()
-                                .height(dp(0.042f))
+                                .height(dp(0.034f))
                         ) {
                             val y = size.height / 2f
-                            val stroke = size.height * 0.19f
+                            val stroke = size.height * 0.24f
                             drawLine(
                                 textColor.copy(alpha = 0.28f),
                                 Offset(0f, y),
@@ -559,7 +692,7 @@ fun PosterCardVertical(
                             )
                             val x = size.width * card.progress.coerceIn(0f, 1f)
                             drawLine(
-                                textColor.copy(alpha = 0.95f),
+                                textColor.copy(alpha = 0.96f),
                                 Offset(0f, y),
                                 Offset(x, y),
                                 stroke,
@@ -567,7 +700,7 @@ fun PosterCardVertical(
                             )
                             drawCircle(
                                 textColor,
-                                radius = size.height * 0.34f,
+                                radius = size.height * 0.40f,
                                 center = Offset(x, y),
                             )
                         }
@@ -577,60 +710,58 @@ fun PosterCardVertical(
                         ) {
                             Text(
                                 text = fmtMs(elapsed),
-                                color = textColor.copy(alpha = 0.76f),
-                                fontSize = sp(0.044f),
+                                color = textColor.copy(alpha = 0.80f),
+                                fontSize = sp(0.039f),
+                                lineHeight = sp(0.043f),
                                 fontWeight = FontWeight.Medium,
                             )
                             Text(
                                 text = fmtMs(total),
-                                color = textColor.copy(alpha = 0.76f),
-                                fontSize = sp(0.044f),
+                                color = textColor.copy(alpha = 0.80f),
+                                fontSize = sp(0.039f),
+                                lineHeight = sp(0.043f),
                                 fontWeight = FontWeight.Medium,
                             )
                         }
                     }
 
-                    // Tombol kontrol pemutar (Shuffle, <<, ||, >>, Repeat) persis sesuai beatles_player_card
+                    // 3. Tombol kontrol pemutar: Shuffle, Prev (<<), Pause (||), Next (>>), Repeat persis referensi
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = dp(0.015f)),
+                            .padding(horizontal = dp(0.012f), vertical = dp(0.004f)),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(
                             Icons.Rounded.Shuffle,
                             contentDescription = null,
-                            tint = textColor.copy(alpha = 0.75f),
-                            modifier = Modifier.size(dp(0.075f)),
+                            tint = textColor.copy(alpha = 0.82f),
+                            modifier = Modifier.size(dp(0.064f)),
                         )
-                        Icon(
-                            Icons.Rounded.FastRewind,
-                            contentDescription = null,
-                            tint = textColor,
-                            modifier = Modifier.size(dp(0.098f)),
+                        PosterDoubleTriangleIcon(
+                            isForward = false,
+                            color = textColor,
+                            modifier = Modifier.size(width = dp(0.105f), height = dp(0.068f)),
                         )
-                        Icon(
-                            Icons.Rounded.Pause,
-                            contentDescription = null,
-                            tint = textColor,
-                            modifier = Modifier.size(dp(0.120f)),
+                        PosterPauseBarsIcon(
+                            color = textColor,
+                            modifier = Modifier.size(width = dp(0.080f), height = dp(0.102f)),
                         )
-                        Icon(
-                            Icons.Rounded.FastForward,
-                            contentDescription = null,
-                            tint = textColor,
-                            modifier = Modifier.size(dp(0.098f)),
+                        PosterDoubleTriangleIcon(
+                            isForward = true,
+                            color = textColor,
+                            modifier = Modifier.size(width = dp(0.105f), height = dp(0.068f)),
                         )
                         Icon(
                             Icons.Rounded.Repeat,
                             contentDescription = null,
-                            tint = textColor.copy(alpha = 0.75f),
-                            modifier = Modifier.size(dp(0.075f)),
+                            tint = textColor.copy(alpha = 0.82f),
+                            modifier = Modifier.size(dp(0.064f)),
                         )
                     }
 
-                    // Baris pengatur volume (VolumeMute - bar slider dengan thumb bulat - VolumeUp)
+                    // 4. Baris pengatur volume bawah (VolumeMute - bar slider dengan thumb bulat - VolumeUp)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -638,17 +769,17 @@ fun PosterCardVertical(
                         Icon(
                             Icons.Rounded.VolumeMute,
                             contentDescription = null,
-                            tint = textColor.copy(alpha = 0.75f),
-                            modifier = Modifier.size(dp(0.052f)),
+                            tint = textColor.copy(alpha = 0.84f),
+                            modifier = Modifier.size(dp(0.050f)),
                         )
                         Canvas(
                             Modifier
                                 .weight(1f)
-                                .height(dp(0.032f))
-                                .padding(horizontal = dp(0.018f))
+                                .height(dp(0.028f))
+                                .padding(horizontal = dp(0.016f))
                         ) {
                             val y = size.height / 2f
-                            val stroke = size.height * 0.22f
+                            val stroke = size.height * 0.24f
                             drawLine(
                                 textColor.copy(alpha = 0.28f),
                                 Offset(0f, y),
@@ -658,7 +789,7 @@ fun PosterCardVertical(
                             )
                             val volX = size.width * 0.65f
                             drawLine(
-                                textColor.copy(alpha = 0.90f),
+                                textColor.copy(alpha = 0.94f),
                                 Offset(0f, y),
                                 Offset(volX, y),
                                 stroke,
@@ -666,97 +797,307 @@ fun PosterCardVertical(
                             )
                             drawCircle(
                                 color = textColor,
-                                radius = size.height * 0.38f,
+                                radius = size.height * 0.42f,
                                 center = Offset(volX, y),
                             )
                         }
                         Icon(
                             Icons.Rounded.VolumeUp,
                             contentDescription = null,
-                            tint = textColor.copy(alpha = 0.75f),
-                            modifier = Modifier.size(dp(0.052f)),
+                            tint = textColor.copy(alpha = 0.84f),
+                            modifier = Modifier.size(dp(0.050f)),
                         )
                     }
                 }
             }
         }
 
-        // Kilau bintang (Starflare) di sudut kartu persis seperti beatles_player_card.jpg
+        // Pantulan cahaya optik realistis di tepi bezel kaca (lebih glow, agak transparan, dan sedikit lebih besar)
         if (sparkle) {
-            val flareSize = dp(0.24f)
+            val flareSize = dp(0.26f)
             val half = flareSize / 2
-            // Kiri-atas
-            StarFlare(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .offset(x = dp(0.015f) - half, y = dp(0.015f) - half)
-                    .size(flareSize * 1.1f)
-            )
-            // Kanan-atas
-            StarFlare(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .offset(x = half - dp(0.015f), y = dp(0.015f) - half)
-                    .size(flareSize)
-            )
-            // Kiri-bawah
-            StarFlare(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .offset(x = dp(0.015f) - half, y = half - dp(0.015f))
-                    .size(flareSize * 0.9f)
-            )
-            // Kanan-bawah
-            StarFlare(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .offset(x = half - dp(0.015f), y = half - dp(0.020f))
-                    .size(flareSize * 1.15f)
-            )
+            when (sparkleStyle % 3) {
+                1 -> {
+                    // Sudut kiri-atas bezel
+                    StarFlare(
+                        rimAngleDeg = 38f,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .offset(x = dp(0.022f) - half, y = dp(0.018f) - half)
+                            .size(flareSize)
+                    )
+                }
+                2 -> {
+                    // Sudut kanan-atas + pantulan halus di tepi kanan-bawah bezel
+                    StarFlare(
+                        rimAngleDeg = -38f,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .offset(x = half - dp(0.022f), y = dp(0.018f) - half)
+                            .size(flareSize)
+                    )
+                    StarFlare(
+                        rimAngleDeg = 90f,
+                        intensity = 0.82f,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .offset(x = half - dp(0.008f), y = -dp(0.28f))
+                            .size(flareSize * 0.86f)
+                    )
+                }
+                else -> {
+                    // Sudut kanan-atas bezel
+                    StarFlare(
+                        rimAngleDeg = -38f,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .offset(x = half - dp(0.022f), y = dp(0.018f) - half)
+                            .size(flareSize)
+                    )
+                }
+            }
         }
     }
 }
 
-/** Kilau bintang kamera (lens starflare) dengan halo lembut + 4 sinar utama tajam + 4 sinar diagonal. */
+/** Ikon Pause (||) berupa 2 batang vertikal tebal membulat persis gambar referensi kartu Beatles. */
 @Composable
-private fun StarFlare(modifier: Modifier = Modifier) {
+private fun PosterPauseBarsIcon(
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    Canvas(modifier) {
+        val barW = size.width * 0.34f
+        val barH = size.height * 0.92f
+        val topY = (size.height - barH) / 2f
+        val radius = CornerRadius(barW * 0.32f, barW * 0.32f)
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(size.width * 0.06f, topY),
+            size = Size(barW, barH),
+            cornerRadius = radius,
+        )
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(size.width - size.width * 0.06f - barW, topY),
+            size = Size(barW, barH),
+            cornerRadius = radius,
+        )
+    }
+}
+
+/** Ikon Prev (<<) dan Next (>>) berupa 2 segitiga ganda tebal membulat persis gambar referensi kartu Beatles. */
+@Composable
+private fun PosterDoubleTriangleIcon(
+    isForward: Boolean,
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        val midY = h * 0.5f
+        val topY = h * 0.08f
+        val botY = h * 0.92f
+
+        fun drawTriangle(xTip: Float, xBase: Float) {
+            val path = Path().apply {
+                moveTo(xTip, midY)
+                lineTo(xBase, topY)
+                lineTo(xBase, botY)
+                close()
+            }
+            drawPath(path = path, color = color)
+            drawPath(
+                path = path,
+                color = color,
+                style = Stroke(width = h * 0.12f, join = androidx.compose.ui.graphics.StrokeJoin.Round),
+            )
+        }
+
+        if (isForward) {
+            // Segitiga kiri & kanan menghadap ke kanan (>>)
+            drawTriangle(xTip = w * 0.50f, xBase = w * 0.08f)
+            drawTriangle(xTip = w * 0.92f, xBase = w * 0.50f)
+        } else {
+            // Segitiga kiri & kanan menghadap ke kiri (<<)
+            drawTriangle(xTip = w * 0.08f, xBase = w * 0.50f)
+            drawTriangle(xTip = w * 0.50f, xBase = w * 0.92f)
+        }
+    }
+}
+
+/**
+ * Pantulan cahaya optik realistis pada tepi kaca (optical specular rim reflection & lens diffraction):
+ * - Menyatu dengan garis tepi kaca melalui bias cahaya sepanjang rim (bukan tempelan putih solid)
+ * - Setiap berkas sinar memudar halus dengan gradasi eksponensial menuju transparan (0% di ujung)
+ * - Menggunakan BlendMode.Plus agar bercampur secara optik dengan warna kaca dan latar di belakangnya.
+ */
+@Composable
+private fun StarFlare(
+    modifier: Modifier = Modifier,
+    rimAngleDeg: Float = -35f,
+    intensity: Float = 1f,
+) {
     Canvas(modifier) {
         val c = Offset(size.width / 2f, size.height / 2f)
-        val rMain = size.minDimension * 0.48f
-        val rDiag = rMain * 0.52f
-        val core = rMain * 0.085f
+        val rMain = size.minDimension * 0.49f
+        val rDiag = rMain * 0.42f
+        val waist = rMain * 0.028f
+        val waistGlow = rMain * 0.078f
+        val k = intensity.coerceIn(0.3f, 1.25f)
 
-        // Halo cahaya lembut
+        // 1a. Halo bloom atmosferik luar yang luas, lembut, dan bercahaya (outer luminous glow)
         drawCircle(
             brush = Brush.radialGradient(
-                colors = listOf(
-                    Color.White.copy(alpha = 0.85f),
-                    Color.White.copy(alpha = 0.25f),
-                    Color.Transparent,
+                colorStops = arrayOf(
+                    0.0f to Color.White.copy(alpha = 0.42f * k),
+                    0.20f to Color(0xFFEAF4FF).copy(alpha = 0.26f * k),
+                    0.48f to Color(0xFFD6EAFF).copy(alpha = 0.11f * k),
+                    0.78f to Color(0xFFC4E2FF).copy(alpha = 0.035f * k),
+                    1.0f to Color.Transparent,
                 ),
                 center = c,
-                radius = rMain * 0.55f,
+                radius = rMain * 0.96f,
             ),
-            radius = rMain * 0.55f,
+            radius = rMain * 0.96f,
             center = c,
+            blendMode = androidx.compose.ui.graphics.BlendMode.Plus,
         )
 
-        // 4 sinar diagonal tipis
-        val d = rDiag * 0.7071f
-        drawLine(Color.White.copy(alpha = 0.55f), Offset(c.x - d, c.y - d), Offset(c.x + d, c.y + d), strokeWidth = core * 0.45f, cap = StrokeCap.Round)
-        drawLine(Color.White.copy(alpha = 0.55f), Offset(c.x - d, c.y + d), Offset(c.x + d, c.y - d), strokeWidth = core * 0.45f, cap = StrokeCap.Round)
+        // 1b. Halo glow menengah di sekitar pusat pantulan
+        drawCircle(
+            brush = Brush.radialGradient(
+                colorStops = arrayOf(
+                    0.0f to Color.White.copy(alpha = 0.54f * k),
+                    0.35f to Color(0xFFF0F8FF).copy(alpha = 0.28f * k),
+                    0.72f to Color(0xFFDCEEFF).copy(alpha = 0.08f * k),
+                    1.0f to Color.Transparent,
+                ),
+                center = c,
+                radius = rMain * 0.46f,
+            ),
+            radius = rMain * 0.46f,
+            center = c,
+            blendMode = androidx.compose.ui.graphics.BlendMode.Plus,
+        )
 
-        // 4 sinar utama tajam (vertikal & horizontal)
-        val mainStar = Path().apply {
-            moveTo(c.x, c.y - rMain)
-            quadraticTo(c.x + core * 0.35f, c.y - core * 0.35f, c.x + rMain, c.y)
-            quadraticTo(c.x + core * 0.35f, c.y + core * 0.35f, c.x, c.y + rMain)
-            quadraticTo(c.x - core * 0.35f, c.y + core * 0.35f, c.x - rMain, c.y)
-            quadraticTo(c.x - core * 0.35f, c.y - core * 0.35f, c.x, c.y - rMain)
+        // 2. Pantulan memanjang mengikuti sudut tepi bezel kaca (specular rim streak, semi-transparan & glowing)
+        val rad = Math.toRadians(rimAngleDeg.toDouble())
+        val cosA = kotlin.math.cos(rad).toFloat()
+        val sinA = kotlin.math.sin(rad).toFloat()
+        val rimLen = rMain * 0.52f
+        val rimP1 = Offset(c.x - cosA * rimLen, c.y - sinA * rimLen)
+        val rimP2 = Offset(c.x + cosA * rimLen, c.y + sinA * rimLen)
+        drawLine(
+            brush = Brush.linearGradient(
+                colorStops = arrayOf(
+                    0.0f to Color.Transparent,
+                    0.25f to Color(0xFFEAF4FF).copy(alpha = 0.22f * k),
+                    0.50f to Color.White.copy(alpha = 0.58f * k),
+                    0.75f to Color(0xFFEAF4FF).copy(alpha = 0.22f * k),
+                    1.0f to Color.Transparent,
+                ),
+                start = rimP1,
+                end = rimP2,
+            ),
+            start = rimP1,
+            end = rimP2,
+            strokeWidth = rMain * 0.068f,
+            cap = StrokeCap.Round,
+            blendMode = androidx.compose.ui.graphics.BlendMode.Plus,
+        )
+
+        // 3. 4 berkas difraksi diagonal semi-transparan yang memudar penuh di ujung
+        val d = rDiag * 0.7071f
+        val dWaist = waist * 0.65f
+        val diagStar = Path().apply {
+            moveTo(c.x - d, c.y - d)
+            quadraticTo(c.x, c.y - dWaist, c.x + d, c.y - d)
+            quadraticTo(c.x + dWaist, c.y, c.x + d, c.y + d)
+            quadraticTo(c.x, c.y + dWaist, c.x - d, c.y + d)
+            quadraticTo(c.x - dWaist, c.y, c.x - d, c.y - d)
             close()
         }
-        drawPath(mainStar, Color.White.copy(alpha = 0.96f))
-        drawCircle(Color.White, radius = core * 0.95f, center = c)
+        drawPath(
+            path = diagStar,
+            brush = Brush.radialGradient(
+                colorStops = arrayOf(
+                    0.0f to Color.White.copy(alpha = 0.48f * k),
+                    0.28f to Color.White.copy(alpha = 0.20f * k),
+                    0.68f to Color(0xFFE6F2FF).copy(alpha = 0.05f * k),
+                    1.0f to Color.Transparent,
+                ),
+                center = c,
+                radius = rDiag,
+            ),
+            blendMode = androidx.compose.ui.graphics.BlendMode.Plus,
+        )
+
+        // 4a. Lapisan glow lembut di sepanjang 4 berkas sinar utama (soft ray bloom)
+        val glowStar = Path().apply {
+            moveTo(c.x, c.y - rMain * 0.94f)
+            quadraticTo(c.x + waistGlow, c.y - waistGlow, c.x + rMain * 0.94f, c.y)
+            quadraticTo(c.x + waistGlow, c.y + waistGlow, c.x, c.y + rMain * 0.94f)
+            quadraticTo(c.x - waistGlow, c.y + waistGlow, c.x - rMain * 0.94f, c.y)
+            quadraticTo(c.x - waistGlow, c.y - waistGlow, c.x, c.y - rMain * 0.94f)
+            close()
+        }
+        drawPath(
+            path = glowStar,
+            brush = Brush.radialGradient(
+                colorStops = arrayOf(
+                    0.0f to Color(0xFFF2F8FF).copy(alpha = 0.36f * k),
+                    0.22f to Color(0xFFE6F2FF).copy(alpha = 0.20f * k),
+                    0.55f to Color(0xFFD6EAFF).copy(alpha = 0.07f * k),
+                    1.0f to Color.Transparent,
+                ),
+                center = c,
+                radius = rMain * 0.94f,
+            ),
+            blendMode = androidx.compose.ui.graphics.BlendMode.Plus,
+        )
+
+        // 4b. 4 berkas difraksi utama (vertikal & horizontal) agak transparan dengan gradasi halus ke ujung
+        val mainStar = Path().apply {
+            moveTo(c.x, c.y - rMain)
+            quadraticTo(c.x + waist, c.y - waist, c.x + rMain, c.y)
+            quadraticTo(c.x + waist, c.y + waist, c.x, c.y + rMain)
+            quadraticTo(c.x - waist, c.y + waist, c.x - rMain, c.y)
+            quadraticTo(c.x - waist, c.y - waist, c.x, c.y - rMain)
+            close()
+        }
+        drawPath(
+            path = mainStar,
+            brush = Brush.radialGradient(
+                colorStops = arrayOf(
+                    0.0f to Color.White.copy(alpha = 0.76f * k),
+                    0.15f to Color.White.copy(alpha = 0.54f * k),
+                    0.38f to Color(0xFFF2F8FF).copy(alpha = 0.24f * k),
+                    0.70f to Color(0xFFDCEEFF).copy(alpha = 0.07f * k),
+                    1.0f to Color.Transparent,
+                ),
+                center = c,
+                radius = rMain,
+            ),
+            blendMode = androidx.compose.ui.graphics.BlendMode.Plus,
+        )
+
+        // 5. Inti cahaya titik pantul semi-transparan yang menyatu lembut (translucent glowing hot-spot)
+        drawCircle(
+            brush = Brush.radialGradient(
+                colorStops = arrayOf(
+                    0.0f to Color.White.copy(alpha = 0.80f * k),
+                    0.42f to Color.White.copy(alpha = 0.48f * k),
+                    1.0f to Color.Transparent,
+                ),
+                center = c,
+                radius = rMain * 0.14f,
+            ),
+            radius = rMain * 0.14f,
+            center = c,
+            blendMode = androidx.compose.ui.graphics.BlendMode.Plus,
+        )
     }
 }
 
@@ -863,7 +1204,11 @@ fun PosterContent(
                                     sparkleStyle = el.sparkleStyle,
                                 )
                             } else {
-                                PosterCard(card = it, widthPx = bw)
+                                PosterCard(
+                                    card = it,
+                                    widthPx = bw,
+                                    sparkle = sparkle,
+                                )
                             }
                         }
                         ElementKind.CUTOUT -> cutouts.getOrNull(el.refIndex)?.let {
@@ -958,7 +1303,7 @@ fun PosterEditorSurface(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .aspectRatio(vm.aspect.ratio)
+            .aspectRatio(vm.effectiveAspectRatio)
     ) {
         val cw = constraints.maxWidth.toFloat()
         val ch = constraints.maxHeight.toFloat()

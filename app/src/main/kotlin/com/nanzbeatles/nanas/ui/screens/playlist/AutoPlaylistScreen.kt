@@ -752,7 +752,7 @@ private fun AutoPlaylistHeader(
                             onCreatePoster = {
                                 com.nanzbeatles.nanas.poster.PosterSession.openFromPlaylist(
                                     name = name,
-                                    songs = songs.filter { !it.song.isVideo }.map {
+                                    songs = songs.map {
                                         com.nanzbeatles.nanas.poster.PosterSong(
                                             id = it.song.id,
                                             title = it.song.title,

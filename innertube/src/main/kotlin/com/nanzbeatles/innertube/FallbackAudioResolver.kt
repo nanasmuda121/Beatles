@@ -433,6 +433,51 @@ object FallbackAudioResolver {
             Triple(format, url, resolvedDetails)
         }
 
+    /**
+     * Resolves a standard full-length MP3 file for [videoId] suitable for uploading to
+     * vocal & instrument stem separation endpoints that reject fragmented fMP4 or WebM containers.
+     */
+    suspend fun resolveMp3FileForSeparation(
+        videoId: String,
+        fallbackTitle: String? = null,
+        fallbackAuthor: String? = null,
+        fallbackDurationSec: Int = 0,
+    ): File? = withContext(Dispatchers.IO) {
+        val safeId = videoId.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+        val dedicatedMp3 = File(cacheDir, "${safeId}_sep.mp3")
+        if (dedicatedMp3.exists() && dedicatedMp3.length() > 16_384L) {
+            return@withContext dedicatedMp3
+        }
+        streamFileCache[videoId]?.file?.let { cachedFile ->
+            if (cachedFile.exists() && cachedFile.length() > 16_384L && cachedFile.name.endsWith(".mp3", ignoreCase = true)) {
+                return@withContext cachedFile
+            }
+        }
+
+        val resolvedDetails = resolveVideoDetails(videoId)
+        val title = resolvedDetails?.title?.takeIf { it.isNotBlank() }
+            ?: fallbackTitle?.takeIf { it.isNotBlank() }
+            ?: return@withContext streamFileCache[videoId]?.file?.takeIf { it.exists() && it.length() > 16_384L }
+        val author = resolvedDetails?.author?.takeIf { it.isNotBlank() && it != "Unknown Artist" }
+            ?: fallbackAuthor?.takeIf { it.isNotBlank() }
+            ?: ""
+        val durSec = resolvedDetails?.lengthSeconds?.toIntOrNull()?.takeIf { it > 0 } ?: fallbackDurationSec
+        val targetDurationMs = durSec.toLong() * 1000L
+
+        val downloadedMp3 = downloadTrackFromSoundCloud(
+            videoId = "${safeId}_sep",
+            title = title,
+            author = author,
+            targetDurationMs = targetDurationMs,
+            preferMp3Only = true,
+        )
+        if (downloadedMp3 != null && downloadedMp3.file.exists() && downloadedMp3.file.length() > 16_384L) {
+            return@withContext downloadedMp3.file
+        }
+
+        streamFileCache[videoId]?.file?.takeIf { it.exists() && it.length() > 16_384L }
+    }
+
     private fun buildFormat(
         entry: CachedStreamEntry,
         url: String,
@@ -517,6 +562,7 @@ object FallbackAudioResolver {
         title: String,
         author: String,
         targetDurationMs: Long,
+        preferMp3Only: Boolean = false,
     ): CachedStreamEntry? = withContext(Dispatchers.IO) {
         val cleanTitle = title
             .replace(Regex("\\(Official.*?\\)|\\[Official.*?\\]", RegexOption.IGNORE_CASE), "")
@@ -653,38 +699,40 @@ object FallbackAudioResolver {
                 }
 
                 // Priority 2: HLS fMP4 AAC (aac_160k or aac_96k) merged with a unified master sidx box
-                val hlsMp4 = transcodings.filter { t ->
-                    val obj = t.jsonObject
-                    val proto = obj["format"]?.jsonObject?.get("protocol")?.jsonPrimitive?.content ?: ""
-                    val mime = obj["format"]?.jsonObject?.get("mime_type")?.jsonPrimitive?.content ?: ""
-                    proto == "hls" && mime.startsWith("audio/mp4")
-                }.maxByOrNull { t ->
-                    val preset = t.jsonObject["preset"]?.jsonPrimitive?.content ?: ""
-                    when {
-                        preset.contains("160") -> 160
-                        preset.contains("96") -> 96
-                        else -> 64
-                    }
-                }?.jsonObject
+                if (!preferMp3Only) {
+                    val hlsMp4 = transcodings.filter { t ->
+                        val obj = t.jsonObject
+                        val proto = obj["format"]?.jsonObject?.get("protocol")?.jsonPrimitive?.content ?: ""
+                        val mime = obj["format"]?.jsonObject?.get("mime_type")?.jsonPrimitive?.content ?: ""
+                        proto == "hls" && mime.startsWith("audio/mp4")
+                    }.maxByOrNull { t ->
+                        val preset = t.jsonObject["preset"]?.jsonPrimitive?.content ?: ""
+                        when {
+                            preset.contains("160") -> 160
+                            preset.contains("96") -> 96
+                            else -> 64
+                        }
+                    }?.jsonObject
 
-                if (hlsMp4 != null) {
-                    val apiUrl = hlsMp4["url"]?.jsonPrimitive?.content
-                    val preset = hlsMp4["preset"]?.jsonPrimitive?.content ?: ""
-                    val bitrate = if (preset.contains("160")) 160_000 else 128_000
-                    if (!apiUrl.isNullOrBlank()) {
-                        val m3u8Url = resolveSoundCloudTranscodingUrl(apiUrl, cid)
-                        if (!m3u8Url.isNullOrBlank()) {
-                            val safeId = videoId.replace(Regex("[^a-zA-Z0-9_-]"), "_")
-                            val outFile = File(cacheDir, "${safeId}.m4a")
-                            val ok = downloadAndMergeFmp4Hls(m3u8Url, outFile)
-                            if (ok && outFile.length() > 1024L) {
-                                return@withContext CachedStreamEntry(
-                                    file = outFile,
-                                    mimeType = "audio/mp4; codecs=\"mp4a.40.2\"",
-                                    bitrate = bitrate,
-                                    durationMs = trackDurationMs,
-                                    itag = 140,
-                                )
+                    if (hlsMp4 != null) {
+                        val apiUrl = hlsMp4["url"]?.jsonPrimitive?.content
+                        val preset = hlsMp4["preset"]?.jsonPrimitive?.content ?: ""
+                        val bitrate = if (preset.contains("160")) 160_000 else 128_000
+                        if (!apiUrl.isNullOrBlank()) {
+                            val m3u8Url = resolveSoundCloudTranscodingUrl(apiUrl, cid)
+                            if (!m3u8Url.isNullOrBlank()) {
+                                val safeId = videoId.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+                                val outFile = File(cacheDir, "${safeId}.m4a")
+                                val ok = downloadAndMergeFmp4Hls(m3u8Url, outFile)
+                                if (ok && outFile.length() > 1024L) {
+                                    return@withContext CachedStreamEntry(
+                                        file = outFile,
+                                        mimeType = "audio/mp4; codecs=\"mp4a.40.2\"",
+                                        bitrate = bitrate,
+                                        durationMs = trackDurationMs,
+                                        itag = 140,
+                                    )
+                                }
                             }
                         }
                     }

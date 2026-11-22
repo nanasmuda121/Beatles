@@ -88,7 +88,8 @@ class PosterViewModel @Inject constructor(
     var sparkle by mutableStateOf(true)
 
     val minSongs: Int get() = if (mode == PosterMode.PHOTO3D) 1 else PosterMetrics.SONG_COUNT
-    val maxSongs: Int get() = if (mode == PosterMode.PHOTO3D) PosterMetrics.MAX_V_SONGS else PosterMetrics.SONG_COUNT
+    val hasMaxSongs: Boolean get() = mode != PosterMode.PHOTO3D
+    val maxSongs: Int get() = if (mode == PosterMode.PHOTO3D) Int.MAX_VALUE else PosterMetrics.SONG_COUNT
     val maxPhotos: Int get() = if (mode == PosterMode.PHOTO3D) 1 else PosterMetrics.MAX_PHOTOS
 
     /** Pilih mode. Ganti mode = mulai dari awal supaya data dua mode tidak bercampur. */
@@ -99,6 +100,7 @@ class PosterViewModel @Inject constructor(
             cards = emptyList()
             photos.clear()
             currentPhoto = 0
+            customMode2Bg = null
             elements = emptyList()
             selectedId = null
             undoStack.clear()
@@ -106,18 +108,69 @@ class PosterViewModel @Inject constructor(
             layoutSignature = ""
             historyVersion++
         }
-        // Mode 2 dikunci ke aspek potrait 9:16 seperti referensi; Mode 1 default ke proporsi poster referensi Mode 1
-        aspect = if (value == PosterMode.PHOTO3D) PosterAspect.STORY else PosterAspect.COLLAGE
+        // Mode 2 default mengikuti rasio asli foto (dan bebas diganti ke resolusi/rasio apa pun); Mode 1 default ke Poster
+        aspect = if (value == PosterMode.PHOTO3D) PosterAspect.ORIGINAL else PosterAspect.COLLAGE
         loadPlaylistSongsIfNeeded()
         step = PosterStep.SONGS
     }
 
-    /** Background yang dikirim ke kanvas: foto utama (Mode 2) atau kolase blur (Mode 1). */
+    /** Background kustom opsional untuk Mode 2 jika user ingin mengganti background dengan foto lain. */
+    var customMode2Bg by mutableStateOf<Bitmap?>(null)
+        private set
+
+    fun setCustomMode2Background(uri: Uri) {
+        viewModelScope.launch {
+            try {
+                val bmp = PosterImageLoader.decode(context, uri, 1280)
+                customMode2Bg = bmp
+                if (elements.none { it.kind == ElementKind.BACKGROUND }) {
+                    val bgEl = PosterElement(
+                        id = UUID.randomUUID().toString(),
+                        kind = ElementKind.BACKGROUND,
+                        refIndex = 0,
+                        cx = 0.5f,
+                        cy = 0.5f,
+                        group = null,
+                        fill = true,
+                    )
+                    elements = listOf(bgEl) + elements
+                }
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    fun clearCustomMode2Background() {
+        customMode2Bg = null
+    }
+
+    /** Background yang dikirim ke kanvas: background bersih tanpa karakter (Mode 2) atau kolase blur (Mode 1). */
     val canvasBackgrounds: List<Bitmap>
-        get() = if (mode == PosterMode.PHOTO3D) listOfNotNull(readyPhotos.firstOrNull()?.original) else bgBlurred
+        get() = if (mode == PosterMode.PHOTO3D) {
+            val slot = readyPhotos.firstOrNull()
+            listOfNotNull(customMode2Bg ?: slot?.cleanBackground ?: slot?.original)
+        } else {
+            bgBlurred
+        }
 
     val effectiveBgMode: BackgroundMode
         get() = if (mode == PosterMode.PHOTO3D) BackgroundMode.PHOTO else bgMode
+
+    /** Rasio kanvas efektif (lebar / tinggi). Jika ORIGINAL, mengikuti rasio foto yang dipilih. */
+    val effectiveAspectRatio: Float
+        get() {
+            if (aspect == PosterAspect.ORIGINAL) {
+                val refBmp = if (mode == PosterMode.PHOTO3D) {
+                    customMode2Bg ?: readyPhotos.firstOrNull()?.original
+                } else {
+                    bgBlurred.firstOrNull() ?: readyPhotos.firstOrNull()?.original
+                }
+                if (refBmp != null && refBmp.width > 0 && refBmp.height > 0) {
+                    return (refBmp.width.toFloat() / refBmp.height.toFloat()).coerceIn(0.35f, 2.4f)
+                }
+            }
+            return aspect.ratio
+        }
 
     // ------------------------------------------------------------------ lagu dari daftar putar (playlist)
     var playlistName by mutableStateOf(PosterSession.playlistName)
@@ -155,7 +208,6 @@ class PosterViewModel @Inject constructor(
                 if (!pid.isNullOrBlank()) {
                     val dbSongs = database.playlistSongs(pid).firstOrNull().orEmpty()
                     list = dbSongs
-                        .filter { !it.song.song.isVideo }
                         .map { it.song.toPosterSong() }
                 }
                 if (list.isEmpty() && !bid.isNullOrBlank()) {
@@ -164,7 +216,7 @@ class PosterViewModel @Inject constructor(
                 }
                 if (list.isEmpty()) {
                     val all = database.allSongs().firstOrNull().orEmpty()
-                    list = all.filter { !it.song.isVideo }.map { it.toPosterSong() }
+                    list = all.map { it.toPosterSong() }
                 }
                 list
             }
@@ -196,15 +248,14 @@ class PosterViewModel @Inject constructor(
         cardsLoading = true
         viewModelScope.launch {
             val defaults = if (mode == PosterMode.PHOTO3D) floatArrayOf(0.38f, 0.44f, 0.68f, 0.30f)
-            else floatArrayOf(0.08f, 0.06f, 0.82f)
-            val vertical = mode == PosterMode.PHOTO3D
+            else floatArrayOf(0.24f, 0.38f, 0.68f)
             val built = withContext(Dispatchers.IO) {
                 songs.mapIndexed { i, s ->
                     val cover = loadCover(s.thumbnailUrl)
                     PosterCardData(
                         song = s,
                         cover = cover,
-                        autoColor = if (vertical) 0xFF23252A.toInt() else PosterColors.autoCardColor(cover),
+                        autoColor = 0xFF141519.toInt(),
                         progress = defaults[i % defaults.size],
                     )
                 }
@@ -244,7 +295,7 @@ class PosterViewModel @Inject constructor(
     var photoValidationMessage by mutableStateOf<String?>(null)
         private set
 
-    private val remover: BackgroundRemover = MlKitSelfieRemover()
+    private val remover: BackgroundRemover = HybridBackgroundRemover()
     private val processMutex = Mutex()
 
     fun addPhotos(uris: List<Uri>) {
@@ -271,13 +322,6 @@ class PosterViewModel @Inject constructor(
             processMutex.withLock {
                 try {
                     val original = PosterImageLoader.decode(context, slot.uri, 1280)
-                    // Mode 2 hanya tersedia untuk gambar potrait (vertikal) sesuai permintaan user
-                    if (mode == PosterMode.PHOTO3D && original.width >= original.height) {
-                        original.recycle()
-                        photos.remove(slot)
-                        photoValidationMessage = "Template Mode 2 hanya tersedia untuk gambar potrait (vertikal). Silakan pilih foto potrait."
-                        return@withLock
-                    }
                     slot.original = original
                     try {
                         slot.editor = CutoutEditor.create(original, remover)
@@ -299,24 +343,41 @@ class PosterViewModel @Inject constructor(
         }
     }
 
-    /** Pangkas cutout dan siapkan bitmap akhir tiap foto, lalu lanjut ke background. */
+    /**
+     * Pangkas cutout karakter rapat ke batas tubuh & siapkan background bersih (inpainted)
+     * agar di Mode 2 karakter dan background benar-benar terpisah dan bisa digerakkan masing-masing.
+     */
     fun finishCutouts() {
         viewModelScope.launch {
-            val full = mode == PosterMode.PHOTO3D
+            val isMode2 = mode == PosterMode.PHOTO3D
             withContext(Dispatchers.Default) {
                 photos.forEach { slot ->
                     val editor = slot.editor
-                    slot.finalBitmap = when {
-                        slot.status != SlotStatus.DONE -> null
-                        slot.keepOriginal || editor == null ->
-                            if (full) null else slot.original
-                        // Mode 2: ukuran penuh (tidak dipangkas) supaya pas menimpa foto aslinya
-                        full -> editor.bitmap.copy(Bitmap.Config.ARGB_8888, false)
-                        else -> editor.finalCropped()
+                    when {
+                        slot.status != SlotStatus.DONE -> {
+                            slot.finalBitmap = null
+                            slot.cleanBackground = null
+                            slot.cutoutBoundsInOriginal = null
+                        }
+                        slot.keepOriginal || editor == null -> {
+                            slot.finalBitmap = if (isMode2) null else slot.original
+                            slot.cleanBackground = slot.original
+                            slot.cutoutBoundsInOriginal = null
+                        }
+                        else -> {
+                            val (cropped, bounds) = editor.finalCroppedWithBounds()
+                            slot.finalBitmap = cropped
+                            slot.cutoutBoundsInOriginal = bounds
+                            slot.cleanBackground = if (isMode2) {
+                                editor.buildCleanBackground()
+                            } else {
+                                slot.original
+                            }
+                        }
                     }
                 }
             }
-            if (full) enterEditor() else step = PosterStep.BACKGROUND
+            if (isMode2) enterEditor() else step = PosterStep.BACKGROUND
         }
     }
 
@@ -384,9 +445,6 @@ class PosterViewModel @Inject constructor(
         bgMode != BackgroundMode.PHOTO || bgRaw.isNotEmpty()
 
     fun enterEditor() {
-        if (mode == PosterMode.PHOTO3D) {
-            aspect = PosterAspect.STORY
-        }
         val sig = "$mode|$bgMode|${bgBlurred.size}|${readyPhotos.size}|${cards.joinToString(",") { it.song.id }}"
         if (elements.isEmpty() || sig != layoutSignature) {
             buildDefaultLayout()
@@ -449,8 +507,28 @@ class PosterViewModel @Inject constructor(
 
     fun cutoutBitmap(index: Int): Bitmap? = readyPhotos.getOrNull(index)?.finalBitmap
 
-    /** Daftar bitmap cutout per indeks foto (Mode 2: ukuran penuh atau null). */
+    /** Daftar bitmap cutout per indeks foto. */
     val cutoutBitmaps: List<Bitmap?> get() = readyPhotos.map { it.finalBitmap }
+
+    /**
+     * Hitung posisi tengah default karakter (cx, cy) di kanvas Mode 2 agar pada awal dibuka
+     * karakter berdiri tepat di posisi aslinya terhadap foto background, untuk rasio kanvas apa pun.
+     */
+    private fun characterInitialCenterMode2(photoIndex: Int): Pair<Float, Float> {
+        val slot = readyPhotos.getOrNull(photoIndex) ?: return 0.5f to 0.5f
+        val orig = slot.original ?: return 0.5f to 0.5f
+        val bounds = slot.cutoutBoundsInOriginal ?: return 0.5f to 0.5f
+        if (orig.width <= 0 || orig.height <= 0) return 0.5f to 0.5f
+
+        val canvasRatio = effectiveAspectRatio
+        val origRatio = orig.width.toFloat() / orig.height.toFloat()
+        val dispWOverCw = max(1f, origRatio / canvasRatio)
+        val dispHOverCh = max(1f, canvasRatio / origRatio)
+
+        val cx = 0.5f + (bounds[0] - 0.5f) * dispWOverCw
+        val cy = 0.5f + (bounds[1] - 0.5f) * dispHOverCh
+        return cx to cy
+    }
 
     /** Tata letak default zig-zag Mode 1 (100% mirip referensi Mode 1). */
     fun buildDefaultLayout() {
@@ -459,7 +537,7 @@ class PosterViewModel @Inject constructor(
             return
         }
         val list = ArrayList<PosterElement>()
-        val ratio = aspect.ratio // lebar/tinggi
+        val ratio = effectiveAspectRatio // lebar/tinggi
         val canvasH = 1f / ratio // tinggi poster dalam satuan lebar
         if (bgMode == BackgroundMode.PHOTO && bgBlurred.isNotEmpty()) {
             val n = bgBlurred.size
@@ -522,13 +600,14 @@ class PosterViewModel @Inject constructor(
     }
 
     /**
-     * Mode 2: foto potrait penuh sebagai background, 4 kartu vertikal miring perspektif 3D menghadap
-     * ke subjek di tengah, dan cutout subjek berdiri di depan kartu (100% mirip referensi Mode 2).
+     * Mode 2:
+     * 1. Layer BACKGROUND (foto background yang karakternya sudah dihapus/inpaint, group = null -> bisa digeser sendiri)
+     * 2. Layer CARD (kartu vertikal miring perspektif 3D menghadap ke tengah)
+     * 3. Layer CUTOUT (karakter yang sudah dipangkas rapat, group = null -> bisa digeser/di-zoom sendiri terpisah dari background)
      */
     private fun buildPhoto3dLayout() {
-        aspect = PosterAspect.STORY
         val list = ArrayList<PosterElement>()
-        val hasPhoto = readyPhotos.firstOrNull()?.original != null
+        val hasPhoto = readyPhotos.firstOrNull()?.original != null || customMode2Bg != null
         if (hasPhoto) {
             list.add(
                 PosterElement(
@@ -537,20 +616,38 @@ class PosterViewModel @Inject constructor(
                     refIndex = 0,
                     cx = 0.5f,
                     cy = 0.5f,
-                    group = "photo",
+                    group = null,
                     fill = true,
                 )
             )
         }
         // [cx, cy, rotationZ, rotY (perspektif kiri/kanan menghadap tengah), rotX, sparkleStyle]
-        val slots = listOf(
+        val baseSlots = listOf(
             floatArrayOf(0.21f, 0.24f, -5f, 16f, -3f, 0f),   // Kiri-atas (Night Changes)
             floatArrayOf(0.77f, 0.25f, 5f, -16f, -3f, 2f),   // Kanan-atas (Rewrite The Stars)
             floatArrayOf(0.205f, 0.70f, 4f, 18f, 4f, 1f),    // Kiri-bawah (Rude)
             floatArrayOf(0.82f, 0.66f, -4f, -18f, 4f, 0f),   // Kanan-bawah (Mr. Loverman)
         )
+        val totalCards = cards.size
+        val autoScale = when {
+            totalCards <= 4 -> 1f
+            totalCards <= 6 -> 0.88f
+            else -> (0.82f - (totalCards - 6) * 0.03f).coerceAtLeast(0.58f)
+        }
         cards.forEachIndexed { i, _ ->
-            val s = slots[i % slots.size]
+            val s = if (totalCards <= 4) {
+                baseSlots[i % baseSlots.size]
+            } else {
+                val isLeft = (i % 2 == 0)
+                val sideIndex = i / 2
+                val sideCount = ((totalCards + if (isLeft) 1 else 0) / 2).coerceAtLeast(1)
+                val yFrac = if (sideCount == 1) 0.45f else 0.18f + (0.64f * sideIndex / (sideCount - 1).toFloat())
+                val xFrac = if (isLeft) 0.21f + (sideIndex % 2) * 0.03f else 0.79f - (sideIndex % 2) * 0.03f
+                val rotZ = if (isLeft) (if (sideIndex % 2 == 0) -5f else 4f) else (if (sideIndex % 2 == 0) 5f else -4f)
+                val rotYVal = if (isLeft) 16f else -16f
+                val rotXVal = if (yFrac < 0.5f) -3f else 4f
+                floatArrayOf(xFrac, yFrac, rotZ, rotYVal, rotXVal, (i % 3).toFloat())
+            }
             list.add(
                 PosterElement(
                     id = UUID.randomUUID().toString(),
@@ -558,6 +655,7 @@ class PosterViewModel @Inject constructor(
                     refIndex = i,
                     cx = s[0],
                     cy = s[1],
+                    scale = autoScale,
                     rotation = s[2],
                     rotY = s[3],
                     rotX = s[4],
@@ -566,15 +664,16 @@ class PosterViewModel @Inject constructor(
             )
         }
         if (readyPhotos.firstOrNull()?.finalBitmap != null) {
+            val (initCx, initCy) = characterInitialCenterMode2(0)
             list.add(
                 PosterElement(
                     id = UUID.randomUUID().toString(),
                     kind = ElementKind.CUTOUT,
                     refIndex = 0,
-                    cx = 0.5f,
-                    cy = 0.5f,
-                    group = "photo",
-                    fill = true,
+                    cx = initCx,
+                    cy = initCy,
+                    group = null,
+                    fill = false,
                 )
             )
         }
@@ -594,12 +693,62 @@ class PosterViewModel @Inject constructor(
         historyVersion++
     }
 
-    fun changeAspect(value: PosterAspect) {
-        if (mode == PosterMode.PHOTO3D) {
-            aspect = PosterAspect.STORY
-            return
+    /** Reset posisi/skala/rotasi elemen yang sedang dipilih saja (mis. hanya Karakter atau hanya Background). */
+    fun resetSelectedElement() {
+        val sel = selected ?: return
+        pushHistory()
+        elements = elements.map { el ->
+            if (el.id != sel.id) el else {
+                when (el.kind) {
+                    ElementKind.BACKGROUND -> el.copy(
+                        cx = 0.5f,
+                        cy = if (mode == PosterMode.PHOTO3D) 0.5f else (el.refIndex + 0.5f) / el.bgCount.coerceAtLeast(1),
+                        scale = 1f,
+                        rotation = 0f,
+                        flipX = false,
+                    )
+                    ElementKind.CUTOUT -> {
+                        val (initCx, initCy) = if (mode == PosterMode.PHOTO3D) {
+                            characterInitialCenterMode2(el.refIndex)
+                        } else {
+                            0.5f to 0.5f
+                        }
+                        el.copy(cx = initCx, cy = initCy, scale = 1f, rotation = 0f, flipX = false)
+                    }
+                    else -> el.copy(scale = 1f, rotation = 0f, flipX = false)
+                }
+            }
         }
+    }
+
+    fun changeAspect(value: PosterAspect) {
+        if (aspect == value) return
+        val oldRatio = effectiveAspectRatio
         aspect = value
+        val newRatio = effectiveAspectRatio
+        if (mode == PosterMode.PHOTO3D && oldRatio != newRatio) {
+            // Sesuaikan posisi default karakter jika belum digeser jauh atau proporsikan dengan rasio baru
+            val slot = readyPhotos.firstOrNull()
+            val orig = slot?.original
+            val bounds = slot?.cutoutBoundsInOriginal
+            if (orig != null && bounds != null && orig.width > 0 && orig.height > 0) {
+                val origRatio = orig.width.toFloat() / orig.height.toFloat()
+                val oldDispW = max(1f, origRatio / oldRatio)
+                val oldDispH = max(1f, oldRatio / origRatio)
+                val newDispW = max(1f, origRatio / newRatio)
+                val newDispH = max(1f, newRatio / origRatio)
+                elements = elements.map { el ->
+                    if (el.kind == ElementKind.CUTOUT) {
+                        val relX = (el.cx - 0.5f) / oldDispW
+                        val relY = (el.cy - 0.5f) / oldDispH
+                        el.copy(
+                            cx = 0.5f + relX * newDispW,
+                            cy = 0.5f + relY * newDispH,
+                        )
+                    } else el
+                }
+            }
+        }
     }
 
     private fun targetIds(): Set<String> {
@@ -624,6 +773,8 @@ class PosterViewModel @Inject constructor(
         }
     }
 
+    fun setSelectedX(cxFrac: Float) = editSelectedDebounced(single = true) { it.copy(cx = cxFrac.coerceIn(-0.5f, 1.5f)) }
+    fun setSelectedY(cyFrac: Float) = editSelectedDebounced(single = true) { it.copy(cy = cyFrac.coerceIn(-0.5f, 1.5f)) }
     fun setSelectedRotation(deg: Float) = editSelectedDebounced { it.copy(rotation = deg) }
     fun setSelectedScale(s: Float) = editSelectedDebounced { it.copy(scale = s.coerceIn(0.15f, 5f)) }
     fun setSelectedTiltX(deg: Float) = editSelectedDebounced(single = true) { it.copy(rotX = deg.coerceIn(-70f, 70f)) }
@@ -672,7 +823,7 @@ class PosterViewModel @Inject constructor(
 
     /**
      * Cari elemen yang disentuh di posisi ([px],[py]) pada kanvas berukuran [cw] x [ch] piksel.
-     * Area transparan cutout diabaikan agar elemen di belakangnya bisa dipilih.
+     * Area transparan cutout diabaikan agar elemen di belakangnya (kartu atau background) bisa dipilih.
      */
     fun hitTest(px: Float, py: Float, cw: Float, ch: Float): String? {
         for (el in elements.asReversed()) {
@@ -688,16 +839,8 @@ class PosterViewModel @Inject constructor(
             if (lx < -bw / 2f || lx > bw / 2f || ly < -bh / 2f || ly > bh / 2f) continue
             if (el.kind == ElementKind.CUTOUT) {
                 val bmp = cutoutBitmap(el.refIndex) ?: continue
-                val bx: Int
-                val by: Int
-                if (el.fill) {
-                    val sc = max(bw / bmp.width, bh / bmp.height)
-                    bx = (((lx + bw / 2f) - (bw - bmp.width * sc) / 2f) / sc).toInt().coerceIn(0, bmp.width - 1)
-                    by = (((ly + bh / 2f) - (bh - bmp.height * sc) / 2f) / sc).toInt().coerceIn(0, bmp.height - 1)
-                } else {
-                    bx = ((lx + bw / 2f) / bw * bmp.width).toInt().coerceIn(0, bmp.width - 1)
-                    by = ((ly + bh / 2f) / bh * bmp.height).toInt().coerceIn(0, bmp.height - 1)
-                }
+                val bx = ((lx + bw / 2f) / bw * bmp.width).toInt().coerceIn(0, bmp.width - 1)
+                val by = ((ly + bh / 2f) / bh * bmp.height).toInt().coerceIn(0, bmp.height - 1)
                 val alpha = (bmp.getPixel(bx, by) ushr 24) and 255
                 if (alpha < 16) continue
             }
@@ -710,29 +853,63 @@ class PosterViewModel @Inject constructor(
     fun baseSize(el: PosterElement, cw: Float, ch: Float): Pair<Float, Float> = when (el.kind) {
         ElementKind.CARD -> {
             if (mode == PosterMode.PHOTO3D) {
-                val w = cw * PosterMetrics.V_CARD_W
+                // Proporsional di semua resolusi (9:16, 4:5, 3:4, 1:1, 4:3, 16:9) agar kartu tidak melebihi tinggi kanvas
+                val maxWByHeight = (ch * 0.385f) / PosterMetrics.V_CARD_ASPECT
+                val w = kotlin.math.min(cw * PosterMetrics.V_CARD_W, maxWByHeight)
                 w to w * PosterMetrics.V_CARD_ASPECT
             } else {
-                val w = cw * PosterMetrics.CARD_W
+                val maxWByHeight = (ch * 0.30f) / PosterMetrics.CARD_ASPECT
+                val w = kotlin.math.min(cw * PosterMetrics.CARD_W, maxWByHeight)
                 w to w * PosterMetrics.CARD_ASPECT
             }
         }
-        ElementKind.CUTOUT -> if (el.fill) {
-            cw to ch
-        } else {
-            var h = cw * PosterMetrics.CUTOUT_H
-            var w = h / cutoutAspect(el.refIndex)
-            val maxW = cw * 0.72f
-            if (w > maxW) {
-                val f = maxW / w
-                w *= f
-                h *= f
+        ElementKind.CUTOUT -> {
+            if (mode == PosterMode.PHOTO3D) {
+                val slot = readyPhotos.getOrNull(el.refIndex)
+                val orig = slot?.original
+                val cutBmp = slot?.finalBitmap
+                if (orig != null && cutBmp != null && orig.width > 0 && orig.height > 0) {
+                    val sc = max(cw / orig.width.toFloat(), ch / orig.height.toFloat())
+                    (cutBmp.width * sc) to (cutBmp.height * sc)
+                } else {
+                    var h = ch * 0.72f
+                    var w = h / cutoutAspect(el.refIndex)
+                    if (w > cw * 0.85f) {
+                        val f = (cw * 0.85f) / w
+                        w *= f
+                        h *= f
+                    }
+                    w to h
+                }
+            } else if (el.fill) {
+                cw to ch
+            } else {
+                var h = cw * PosterMetrics.CUTOUT_H
+                var w = h / cutoutAspect(el.refIndex)
+                val maxW = cw * 0.72f
+                if (w > maxW) {
+                    val f = maxW / w
+                    w *= f
+                    h *= f
+                }
+                w to h
             }
-            w to h
         }
-        ElementKind.BACKGROUND -> if (el.fill) cw to ch else cw to (ch / el.bgCount.coerceAtLeast(1))
+        ElementKind.BACKGROUND -> {
+            if (el.fill) {
+                val bgBmp = canvasBackgrounds.getOrNull(el.refIndex)
+                if (bgBmp != null && bgBmp.width > 0 && bgBmp.height > 0) {
+                    val sc = max(cw / bgBmp.width.toFloat(), ch / bgBmp.height.toFloat())
+                    (bgBmp.width * sc) to (bgBmp.height * sc)
+                } else {
+                    cw to ch
+                }
+            } else {
+                cw to (ch / el.bgCount.coerceAtLeast(1))
+            }
+        }
         ElementKind.STICKER -> {
-            val sz = cw * 0.28f
+            val sz = kotlin.math.min(cw, ch) * 0.28f
             sz to sz
         }
     }

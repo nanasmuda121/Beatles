@@ -41,6 +41,7 @@ val DefaultThemeColor = Color(0xFFE0E0E0)
  *   warm paper/carbon surfaces, and crisp architectural hairline borders.
  */
 val LocalAppVisualStyle = staticCompositionLocalOf { "LIQUID_GLASS" }
+val LocalSoftLightMode = staticCompositionLocalOf { true }
 
 fun Color.isMonochromeSeed(): Boolean {
     val maxC = max(red, max(green, blue))
@@ -53,6 +54,7 @@ fun Color.isMonochromeSeed(): Boolean {
 fun NanzBeatlesTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     pureBlack: Boolean = false,
+    softLight: Boolean = true,
     themeColor: Color = DefaultThemeColor,
     selectedFont: String = "OUTFIT",
     fontScale: Float = 1f,
@@ -83,12 +85,12 @@ fun NanzBeatlesTheme(
         style = if (isMonochrome) PaletteStyle.Monochrome else PaletteStyle.Vibrant
     )
 
-    val colorScheme = remember(baseColorScheme, pureBlack, darkTheme, isMonochrome, animatedSeedColor, isEditorial) {
+    val colorScheme = remember(baseColorScheme, pureBlack, darkTheme, softLight, isMonochrome, animatedSeedColor, isEditorial) {
         val vibrantPrimary = if (isMonochrome) {
             if (darkTheme) {
                 if (isEditorial) Color(0xFFF5F2EB) else Color.White
             } else {
-                if (isEditorial) Color(0xFF111111) else Color(0xFF0A0C10)
+                if (isEditorial) Color(0xFF18181A) else Color(0xFF15181F)
             }
         } else {
             if (darkTheme) {
@@ -108,17 +110,17 @@ fun NanzBeatlesTheme(
 
         if (!darkTheme) {
             if (isEditorial) {
-                // TEMA PUTIH + EDITORIAL (Warm Magazine Paper #FBF9F5 & Deep Ink #111111)
-                val paperBg = Color(0xFFFBF9F5)
-                val inkFg = Color(0xFF111111)
+                // TEMA CERAH + EDITORIAL (Cerah Lembut #E5E1D8 atau Kertas Hangat #F6F3EC)
+                val paperBg = if (softLight) Color(0xFFE5E1D8) else Color(0xFFF6F3EC)
+                val inkFg = Color(0xFF18181A)
                 val primaryCont = if (isMonochrome) {
-                    Color(0xFF18181B)
+                    Color(0xFF1E1E22)
                 } else {
                     androidx.compose.ui.graphics.lerp(paperBg, vibrantPrimary, 0.18f)
                 }
-                val onPrimaryCont = if (isMonochrome) Color(0xFFFBF9F5) else inkFg
+                val onPrimaryCont = if (isMonochrome) paperBg else inkFg
                 val secondaryCont = if (isMonochrome) {
-                    Color(0xFFEBE6DD)
+                    if (softLight) Color(0xFFD6D1C6) else Color(0xFFEBE6DD)
                 } else {
                     androidx.compose.ui.graphics.lerp(paperBg, vibrantPrimary, 0.14f)
                 }
@@ -134,70 +136,72 @@ fun NanzBeatlesTheme(
                     onSecondaryContainer = inkFg,
                     tertiary = if (isMonochrome) Color(0xFF3F3F46) else vibrantPrimary,
                     onTertiary = paperBg,
-                    tertiaryContainer = Color(0xFFEFECE6),
+                    tertiaryContainer = if (softLight) Color(0xFFDCD7CC) else Color(0xFFEFECE6),
                     onTertiaryContainer = inkFg,
                     background = paperBg,
                     onBackground = inkFg,
                     surface = paperBg,
                     onSurface = inkFg,
-                    surfaceVariant = Color(0xFFEEEAE2),
+                    surfaceVariant = if (softLight) Color(0xFFD8D3C8) else Color(0xFFEEEAE2),
                     onSurfaceVariant = Color(0xFF4A4843),
-                    surfaceDim = Color(0xFFEFECE6),
-                    surfaceBright = paperBg,
-                    surfaceContainerLowest = Color.White,
-                    surfaceContainerLow = Color(0xFFF6F3EC),
-                    surfaceContainer = Color(0xFFF2EFE7),
-                    surfaceContainerHigh = Color(0xFFEAE5DC),
-                    surfaceContainerHighest = Color(0xFFE2DDD2),
-                    outline = Color(0xFF8C887F),
-                    outlineVariant = Color(0xFFD8D3C8),
+                    surfaceDim = if (softLight) Color(0xFFDAD5CA) else Color(0xFFEFECE6),
+                    surfaceBright = if (softLight) Color(0xFFECE8DF) else paperBg,
+                    surfaceContainerLowest = if (softLight) Color(0xFFEBE7DE) else Color(0xFFFAF8F3),
+                    surfaceContainerLow = if (softLight) Color(0xFFE0DCD2) else Color(0xFFF2EFE8),
+                    surfaceContainer = if (softLight) Color(0xFFDBD6CC) else Color(0xFFEDE9E1),
+                    surfaceContainerHigh = if (softLight) Color(0xFFD4CFC4) else Color(0xFFE6E1D8),
+                    surfaceContainerHighest = if (softLight) Color(0xFFCCC7BC) else Color(0xFFDED9CE),
+                    outline = if (softLight) Color(0xFF868279) else Color(0xFF8C887F),
+                    outlineVariant = if (softLight) Color(0xFFC5C0B5) else Color(0xFFD8D3C8),
                 )
             } else {
-                // TEMA PUTIH + LIQUID GLASS (#FFFFFF Bersih & Kontras Hitam Tajam)
+                // TEMA CERAH + LIQUID GLASS (Cerah Lembut #E3E7EE yang tidak menyilaukan mata, atau Putih #F6F8FC)
+                val lightBg = if (softLight) Color(0xFFE3E7EE) else Color(0xFFF6F8FC)
+                val lightFg = Color(0xFF15181F)
                 val primaryCont = if (isMonochrome) {
-                    Color(0xFF14161C)
+                    Color(0xFF1A1D24)
                 } else {
-                    androidx.compose.ui.graphics.lerp(Color.White, vibrantPrimary, 0.16f)
+                    androidx.compose.ui.graphics.lerp(lightBg, vibrantPrimary, 0.16f)
                 }
                 val onPrimaryCont = if (isMonochrome) {
-                    Color.White
+                    lightBg
                 } else {
-                    Color(0xFF0A0C10)
+                    lightFg
                 }
                 val secondaryCont = if (isMonochrome) {
-                    Color(0xFFE8EAF0)
+                    if (softLight) Color(0xFFD3D9E3) else Color(0xFFE8EAF0)
                 } else {
-                    androidx.compose.ui.graphics.lerp(Color.White, vibrantPrimary, 0.14f)
+                    androidx.compose.ui.graphics.lerp(lightBg, vibrantPrimary, 0.14f)
                 }
 
                 baseColorScheme.copy(
                     primary = vibrantPrimary,
-                    onPrimary = if (vibrantPrimary.luminance() > 0.52f) Color.Black else Color.White,
+                    onPrimary = if (vibrantPrimary.luminance() > 0.52f) lightFg else lightBg,
                     primaryContainer = primaryCont,
                     onPrimaryContainer = onPrimaryCont,
                     secondary = if (isMonochrome) Color(0xFF262932) else vibrantPrimary,
-                    onSecondary = if (isMonochrome) Color.White else if (vibrantPrimary.luminance() > 0.52f) Color.Black else Color.White,
+                    onSecondary = if (isMonochrome) lightBg else if (vibrantPrimary.luminance() > 0.52f) lightFg else lightBg,
                     secondaryContainer = secondaryCont,
-                    onSecondaryContainer = Color(0xFF0A0C10),
+                    onSecondaryContainer = lightFg,
                     tertiary = if (isMonochrome) Color(0xFF3A3F4D) else vibrantPrimary,
-                    onTertiary = Color.White,
-                    tertiaryContainer = if (isMonochrome) Color(0xFFECEEF4) else secondaryCont,
-                    onTertiaryContainer = Color(0xFF0A0C10),
-                    background = Color.White,
-                    onBackground = Color(0xFF0A0C10),
-                    surface = Color.White,
-                    onSurface = Color(0xFF0A0C10),
-                    surfaceVariant = Color(0xFFECEEF3),
-                    onSurfaceVariant = Color(0xFF4A4F5C),
-                    surfaceDim = Color(0xFFF2F3F7),
-                    surfaceBright = Color.White,
-                    surfaceContainerLowest = Color.White,
-                    surfaceContainerLow = Color(0xFFF7F8FA),
-                    surfaceContainer = Color(0xFFF1F2F6),
-                    surfaceContainerHigh = Color(0xFFE9EBF0),
-                    surfaceContainerHighest = Color(0xFFE0E3EB),
-                    outline = Color(0xFFB8BDC8),
-                    outlineVariant = Color(0xFFE2E5EC),
+                    onTertiary = lightBg,
+                    tertiaryContainer = if (isMonochrome) (if (softLight) Color(0xFFD7DDE7) else Color(0xFFECEEF4)) else secondaryCont,
+                    onTertiaryContainer = lightFg,
+                    background = lightBg,
+                    onBackground = lightFg,
+                    surface = lightBg,
+                    onSurface = lightFg,
+                    surfaceVariant = if (softLight) Color(0xFFD4DAE4) else Color(0xFFECEEF3),
+                    onSurfaceVariant = Color(0xFF464D5A),
+                    surfaceDim = if (softLight) Color(0xFFD8DEE8) else Color(0xFFEDF0F5),
+                    surfaceBright = if (softLight) Color(0xFFECEFF5) else Color(0xFFFAFBFD),
+                    surfaceContainerLowest = if (softLight) Color(0xFFE9ECF2) else Color(0xFFFAFBFD),
+                    surfaceContainerLow = if (softLight) Color(0xFFDDE2EB) else Color(0xFFF2F4F8),
+                    surfaceContainer = if (softLight) Color(0xFFD8DEE7) else Color(0xFFECEFF5),
+                    surfaceContainerHigh = if (softLight) Color(0xFFD1D7E2) else Color(0xFFE5E9F0),
+                    surfaceContainerHighest = if (softLight) Color(0xFFCAD1DD) else Color(0xFFDDE2EB),
+                    outline = if (softLight) Color(0xFF9EA6B5) else Color(0xFFB8BDC8),
+                    outlineVariant = if (softLight) Color(0xFFC6CDD9) else Color(0xFFE2E5EC),
                 )
             }
         } else {
@@ -320,7 +324,10 @@ fun NanzBeatlesTheme(
         }
     }
 
-    CompositionLocalProvider(LocalAppVisualStyle provides visualStyle) {
+    CompositionLocalProvider(
+        LocalAppVisualStyle provides visualStyle,
+        LocalSoftLightMode provides softLight,
+    ) {
         MaterialTheme(
             colorScheme = colorScheme,
             typography = typography,
@@ -333,6 +340,7 @@ fun NanzBeatlesTheme(
 fun AuraMusicTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     pureBlack: Boolean = false,
+    softLight: Boolean = true,
     themeColor: Color = DefaultThemeColor,
     selectedFont: String = "OUTFIT",
     fontScale: Float = 1f,
@@ -342,6 +350,7 @@ fun AuraMusicTheme(
 ) = NanzBeatlesTheme(
     darkTheme = darkTheme,
     pureBlack = pureBlack,
+    softLight = softLight,
     themeColor = themeColor,
     selectedFont = selectedFont,
     fontScale = fontScale,

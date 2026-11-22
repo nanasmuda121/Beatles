@@ -190,9 +190,12 @@ import com.nanzbeatles.nanas.models.PersistPlayerState
 import com.nanzbeatles.nanas.models.PersistQueue
 import com.nanzbeatles.nanas.models.toMediaMetadata
 import com.nanzbeatles.nanas.playback.audio.SilenceDetectorAudioProcessor
+import com.nanzbeatles.nanas.playback.audio.DualStemAudioEngine
 import com.nanzbeatles.nanas.playback.audio.DynamicRangeCompressionAudioProcessor
+import com.nanzbeatles.nanas.playback.audio.RemoveMusicVocalRemover
 import com.nanzbeatles.nanas.playback.audio.ReverbAudioProcessor
 import com.nanzbeatles.nanas.playback.audio.StudioAudioProcessorChain
+import com.nanzbeatles.nanas.playback.audio.VocalSeparationStatus
 import com.nanzbeatles.nanas.playback.queues.EmptyQueue
 import com.nanzbeatles.nanas.playback.queues.Queue
 import com.nanzbeatles.nanas.playback.queues.YouTubeQueue
@@ -493,8 +496,200 @@ class MusicService :
     private val playerReverbProcessors = java.util.concurrent.ConcurrentHashMap<Player, ReverbAudioProcessor>()
 
     val audioStyleMode = MutableStateFlow(AudioStyleMode.NORMAL)
+    val vocalRemoverState = RemoveMusicVocalRemover.state
+
+    private val dualStemAudioEngine = DualStemAudioEngine()
+    private var loadedStemSongId: String? = null
+    private var stemSyncJob: Job? = null
+    @Volatile
+    private var stemRefPositionMs: Long = 0L
+    @Volatile
+    private var stemRefElapsedRealtimeMs: Long = 0L
+    @Volatile
+    private var stemMainIsPlaying: Boolean = false
+
+    private fun refreshStemClockFromMainThread() {
+        if (::player.isInitialized) {
+            stemRefPositionMs = player.currentPosition.coerceAtLeast(0L)
+            stemRefElapsedRealtimeMs = android.os.SystemClock.elapsedRealtime()
+            stemMainIsPlaying = player.playWhenReady && player.playbackState == Player.STATE_READY
+        }
+    }
+
+    fun startVocalInstrumentSeparation() {
+        val meta = currentMediaMetadata.value
+        val currentSongId = meta?.id
+            ?: (if (::player.isInitialized) player.currentMediaItem?.mediaId else null)
+        val songTitle = meta?.title
+        val songArtist = meta?.artists?.joinToString(", ") { it.name }
+        val songDurationSec = meta?.duration ?: 0
+
+        // Reset speed/pitch/reverb style to NORMAL while Vocal & Instrument Remover is active
+        audioStyleMode.value = AudioStyleMode.NORMAL
+        playerReverbProcessors.values.forEach {
+            it.setAudioStyleMode(AudioStyleMode.NORMAL)
+        }
+        try {
+            if (::player.isInitialized) {
+                player.setOffloadEnabled(false)
+                player.playbackParameters = PlaybackParameters(1.0f, 1.0f)
+            }
+            secondaryPlayer?.let { sec ->
+                sec.setOffloadEnabled(false)
+                sec.playbackParameters = PlaybackParameters(1.0f, 1.0f)
+            }
+        } catch (e: Exception) {
+            Timber.tag(TAG).w(e, "Failed to prepare player for vocal separation")
+        }
+        refreshStemClockFromMainThread()
+        RemoveMusicVocalRemover.startOrActivate(
+            context = this,
+            songId = currentSongId,
+            downloadUtil = downloadUtil,
+            songTitle = songTitle,
+            songArtist = songArtist,
+            songDurationSec = songDurationSec,
+        )
+    }
+
+    fun toggleVocalInstrumentSeparation() {
+        if (RemoveMusicVocalRemover.state.value.active) {
+            deactivateVocalInstrumentSeparation()
+        } else {
+            startVocalInstrumentSeparation()
+        }
+    }
+
+    fun deactivateVocalInstrumentSeparation() {
+        RemoveMusicVocalRemover.deactivate()
+        stopExternalStemPlayers()
+        equalizerService.setStemMixer(false, 1.0f, 1.0f)
+    }
+
+    fun isVocalSeparationCached(): Boolean {
+        val currentSongId = currentMediaMetadata.value?.id
+            ?: (if (::player.isInitialized) player.currentMediaItem?.mediaId else null)
+            ?: "current_track"
+        return RemoveMusicVocalRemover.isSessionCached(currentSongId)
+    }
+
+    fun setVocalStemVolume(volume: Float) {
+        RemoveMusicVocalRemover.setVocalVolume(volume)
+    }
+
+    fun setInstrumentStemVolume(volume: Float) {
+        RemoveMusicVocalRemover.setInstrumentVolume(volume)
+    }
+
+    fun saveVocalStemToDevice() {
+        val meta = currentMediaMetadata.value
+        val currentSongId = meta?.id
+            ?: (if (::player.isInitialized) player.currentMediaItem?.mediaId else null)
+        RemoveMusicVocalRemover.downloadAndSaveStemToDevice(
+            context = this,
+            songId = currentSongId,
+            songTitle = meta?.title,
+            songArtist = meta?.artists?.joinToString(", ") { it.name },
+            songDurationSec = meta?.duration ?: 0,
+            downloadUtil = downloadUtil,
+            isVocal = true,
+        )
+    }
+
+    fun saveInstrumentStemToDevice() {
+        val meta = currentMediaMetadata.value
+        val currentSongId = meta?.id
+            ?: (if (::player.isInitialized) player.currentMediaItem?.mediaId else null)
+        RemoveMusicVocalRemover.downloadAndSaveStemToDevice(
+            context = this,
+            songId = currentSongId,
+            songTitle = meta?.title,
+            songArtist = meta?.artists?.joinToString(", ") { it.name },
+            songDurationSec = meta?.duration ?: 0,
+            downloadUtil = downloadUtil,
+            isVocal = false,
+        )
+    }
+
+    private fun stopExternalStemPlayers() {
+        stemSyncJob?.cancel()
+        stemSyncJob = null
+        loadedStemSongId = null
+        dualStemAudioEngine.stop { mute ->
+            equalizerService.setMuteMainForExternalStems(mute)
+        }
+        equalizerService.setMuteMainForExternalStems(false)
+    }
+
+    private fun releaseExternalStemPlayers() {
+        stopExternalStemPlayers()
+    }
+
+    private fun ensureExternalStemPlayersLoaded(
+        songId: String,
+        vocalPcmFile: File,
+        instrumentPcmFile: File,
+        sampleRate: Int,
+    ) {
+        refreshStemClockFromMainThread()
+
+        if (stemSyncJob?.isActive != true) {
+            stemSyncJob = scope.launch {
+                while (isActive) {
+                    val vrState = RemoveMusicVocalRemover.state.value
+                    if (!vrState.active ||
+                        vrState.status != VocalSeparationStatus.READY_CACHED ||
+                        !vrState.hasCloudStems
+                    ) {
+                        equalizerService.setMuteMainForExternalStems(false)
+                        break
+                    }
+                    refreshStemClockFromMainThread()
+                    delay(120)
+                }
+            }
+        }
+
+        if (!dualStemAudioEngine.isRunningFor(songId) || loadedStemSongId != songId) {
+            loadedStemSongId = songId
+            dualStemAudioEngine.start(
+                songId = songId,
+                vocalPcmFile = vocalPcmFile,
+                instrumentPcmFile = instrumentPcmFile,
+                sampleRate = sampleRate,
+                isMainPlayingProvider = {
+                    stemMainIsPlaying && !isMuted.value
+                },
+                mainPositionMsProvider = {
+                    if (stemMainIsPlaying) {
+                        val elapsed = (android.os.SystemClock.elapsedRealtime() - stemRefElapsedRealtimeMs)
+                            .coerceIn(0L, 500L)
+                        stemRefPositionMs + elapsed
+                    } else {
+                        stemRefPositionMs
+                    }
+                },
+                vocalGainProvider = {
+                    val sleepMult = sleepTimer.fadeVolumeMultiplier.coerceIn(0f, 1f)
+                    if (isMuted.value) 0f else (RemoveMusicVocalRemover.state.value.vocalVolume * sleepMult).coerceIn(0f, 1.5f)
+                },
+                instrumentGainProvider = {
+                    val sleepMult = sleepTimer.fadeVolumeMultiplier.coerceIn(0f, 1f)
+                    if (isMuted.value) 0f else (RemoveMusicVocalRemover.state.value.instrumentVolume * sleepMult).coerceIn(0f, 1.5f)
+                },
+                onMuteMainPlayer = { mute ->
+                    equalizerService.setMuteMainForExternalStems(mute)
+                },
+            )
+        }
+    }
 
     fun setAudioStyleMode(mode: AudioStyleMode) {
+        // Switching to any Gaya Suara resets the Vocal & Instrument separation mode and clears session cache
+        RemoveMusicVocalRemover.onAudioStyleChanged()
+        stopExternalStemPlayers()
+        equalizerService.setStemMixer(false, 1.0f, 1.0f)
+
         audioStyleMode.value = mode
         playerReverbProcessors.values.forEach {
             it.setAudioStyleMode(mode)
@@ -1044,11 +1239,39 @@ class MusicService :
             .distinctUntilChanged()
             .collectLatest(scope) { mode ->
                 audioStyleMode.value = mode
-                equalizerService.disableVocalSuppression()
+                if (!RemoveMusicVocalRemover.state.value.active) {
+                    equalizerService.disableVocalSuppression()
+                }
                 playerReverbProcessors.values.forEach { processor ->
                     processor.setAudioStyleMode(mode)
                 }
             }
+
+        RemoveMusicVocalRemover.state.collect(scope) { vrState ->
+            if (!vrState.active || vrState.status != VocalSeparationStatus.READY_CACHED) {
+                stopExternalStemPlayers()
+                equalizerService.setStemMixer(false, 1.0f, 1.0f)
+            } else {
+                if (::player.isInitialized) {
+                    runCatching { player.setOffloadEnabled(false) }
+                }
+                val vPcm = vrState.vocalPcmFile
+                val iPcm = vrState.instrumentPcmFile
+                val sId = vrState.songId
+                if (vrState.hasCloudStems && vPcm != null && iPcm != null && !sId.isNullOrBlank()) {
+                    // Use sample-accurate single-AudioTrack DualStemAudioEngine (turn off mid/side DSP filter)
+                    equalizerService.setStemMixer(false, 1.0f, 1.0f)
+                    ensureExternalStemPlayersLoaded(sId, vPcm, iPcm, vrState.pcmSampleRate)
+                } else {
+                    stopExternalStemPlayers()
+                    equalizerService.setStemMixer(
+                        enabled = true,
+                        vocalVolume = vrState.vocalVolume,
+                        instrumentVolume = vrState.instrumentVolume,
+                    )
+                }
+            }
+        }
 
         // Re-sync presence when the "use details" preference changes.
         dataStore.data
@@ -2326,6 +2549,10 @@ class MusicService :
         lastTransitionMediaId = newMediaId
 
         if (isNewSong) {
+            if (RemoveMusicVocalRemover.state.value.active) {
+                stopExternalStemPlayers()
+                RemoveMusicVocalRemover.onSongChanged(this, newMediaId, downloadUtil)
+            }
             // If we were in video mode, just clear the source tracking without
             // resetting the full video state — this avoids the black screen gap
             // where video surface has no content while we re-fetch for the new song.
@@ -2490,6 +2717,10 @@ class MusicService :
                 }
             }
         }
+        if (playbackState == Player.STATE_ENDED && RemoveMusicVocalRemover.state.value.active) {
+            deactivateVocalInstrumentSeparation()
+        }
+        refreshStemClockFromMainThread()
     }
 
     override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
@@ -2512,6 +2743,7 @@ class MusicService :
         if (playWhenReady) {
             setupLoudnessEnhancer()
         }
+        refreshStemClockFromMainThread()
     }
 
     override fun onEvents(
@@ -3705,6 +3937,7 @@ class MusicService :
             playerToRelease.stop()
             playerToRelease.release()
         }
+        releaseExternalStemPlayers()
         secondaryPlayer = null
         fadingPlayer = null
         isCrossfading = false
@@ -4495,6 +4728,11 @@ class MusicService :
     ) {
         if (reason == Player.DISCONTINUITY_REASON_SEEK) {
             scheduleCrossfade()
+            stemRefPositionMs = newPosition.positionMs.coerceAtLeast(0L)
+            stemRefElapsedRealtimeMs = android.os.SystemClock.elapsedRealtime()
+        } else if (reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION && RemoveMusicVocalRemover.state.value.active) {
+            // Turn off vocal & instrument separation if song auto-transitions or loops ("hanya menyala sekali di music yang di pilih ga otomatis")
+            deactivateVocalInstrumentSeparation()
         }
     }
     

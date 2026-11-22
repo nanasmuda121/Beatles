@@ -233,10 +233,11 @@ private fun ModeStep(vm: PosterViewModel) {
             modifier = Modifier.fillMaxWidth(),
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Mode 2: Poster Foto 3D (Khusus Potrait)", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text("Mode 2: Poster Foto 3D (Semua Resolusi)", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 Text(
-                    "Khusus foto potrait (vertikal 9:16). Fotomu jadi background penuh, 1 sampai 4 kartu lagu vertikal " +
-                        "melayang miring 3D di sekelilingmu dengan efek kilau bintang.",
+                    "Mendukung berbagai resolusi & rasio foto (Asli Foto, 9:16, 3:4, 4:5, 1:1, 4:3, 16:9). " +
+                        "Karakter dan background dipisahkan otomatis menjadi 2 layer terpisah sehingga kamu bisa menggerakkan " +
+                        "karakternya saja atau background-nya saja di antara kartu lagu 3D.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
@@ -265,8 +266,11 @@ private fun SongsStep(vm: PosterViewModel) {
             modifier = Modifier.padding(top = 4.dp),
         )
         Text(
-            if (vm.minSongs == vm.maxSongs) "Pilih ${vm.maxSongs} lagu dari daftar putar ini (${vm.selectedSongs.size}/${vm.maxSongs})"
-            else "Pilih ${vm.minSongs} sampai ${vm.maxSongs} lagu dari daftar putar ini (${vm.selectedSongs.size}/${vm.maxSongs})",
+            when {
+                !vm.hasMaxSongs -> "Pilih lagu dari daftar putar ini (${vm.selectedSongs.size} dipilih • Tanpa batas maksimal)"
+                vm.minSongs == vm.maxSongs -> "Pilih ${vm.maxSongs} lagu dari daftar putar ini (${vm.selectedSongs.size}/${vm.maxSongs})"
+                else -> "Pilih ${vm.minSongs} sampai ${vm.maxSongs} lagu dari daftar putar ini (${vm.selectedSongs.size}/${vm.maxSongs})"
+            },
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(vertical = 8.dp),
         )
@@ -379,8 +383,9 @@ private fun PhotosStep(vm: PosterViewModel) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
-            if (single) "Pilih 1 foto potrait (vertikal). Foto ini jadi background penuh 9:16, dan dirimu dipisahkan dari background " +
-                "supaya bisa berdiri di depan kartu lagu 3D."
+            if (single) "Pilih 1 foto (bebas resolusi/rasio apa saja: potrait, persegi, maupun landscape). " +
+                "Karakter dan background akan dipisahkan menjadi 2 layer independen supaya kamu bisa menggerakkan " +
+                "karakternya saja atau background-nya saja."
             else "Tambahkan minimal 1 foto (maksimal ${PosterMetrics.MAX_PHOTOS} foto untuk 3 kartu lagu). " +
                 "Karakter akan dipisahkan otomatis dari objek sekitar.",
             style = MaterialTheme.typography.bodyMedium,
@@ -480,8 +485,6 @@ private fun CutoutStep(vm: PosterViewModel) {
     var erase by remember(slot.id) { mutableStateOf(true) }
     var brushDp by remember(slot.id) { mutableFloatStateOf(28f) }
     var hardness by remember(slot.id) { mutableFloatStateOf(0.7f) }
-    var edge by remember(slot.id) { mutableFloatStateOf(editor?.edgeShift ?: 0f) }
-    var soft by remember(slot.id) { mutableFloatStateOf(editor?.softness ?: 0.20f) }
     var revision by remember(slot.id) { mutableIntStateOf(0) }
 
     Column(
@@ -530,9 +533,8 @@ private fun CutoutStep(vm: PosterViewModel) {
 
         Column(
             Modifier
+                .fillMaxWidth()
                 .padding(top = 8.dp)
-                .verticalScroll(rememberScrollState())
-                .height(200.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Switch(
@@ -564,32 +566,12 @@ private fun CutoutStep(vm: PosterViewModel) {
                     IconButton(
                         onClick = {
                             editor.resetToAuto()
-                            edge = 0f
-                            soft = 0.20f
                             revision++
                         }
                     ) { Icon(Icons.Rounded.RestartAlt, contentDescription = "Reset ke hasil otomatis") }
                 }
                 SliderRow("Ukuran kuas", brushDp, 8f..80f, onChange = { brushDp = it })
                 SliderRow("Kekerasan kuas", hardness, 0f..1f, onChange = { hardness = it })
-                SliderRow(
-                    label = "Tepi (kecilkan / besarkan)",
-                    value = edge,
-                    range = -0.3f..0.3f,
-                    onChange = { edge = it },
-                    onFinished = { editor.setEdge(edge, soft); revision++ },
-                )
-                SliderRow(
-                    label = "Perhalus tepi",
-                    value = soft,
-                    range = 0f..1f,
-                    onChange = { soft = it },
-                    onFinished = { editor.setEdge(edge, soft); revision++ },
-                )
-                Text(
-                    "Satu jari: kuas (Hapus / Pulihkan). Dua jari: zoom dan geser gambar.",
-                    style = MaterialTheme.typography.bodySmall,
-                )
             }
         }
 
@@ -979,7 +961,7 @@ private fun EditorStep(vm: PosterViewModel) {
         ) {
             val availW = maxWidth
             val availH = maxHeight
-            val posterW = min(availW.value, availH.value * vm.aspect.ratio).dp
+            val posterW = min(availW.value, availH.value * vm.effectiveAspectRatio).dp
             PosterEditorSurface(
                 vm = vm,
                 captureLayer = layer,
@@ -1054,8 +1036,8 @@ private enum class EditorTab {
 
 private fun kindShort(kind: ElementKind): String = when (kind) {
     ElementKind.CARD -> "Kartu"
-    ElementKind.CUTOUT -> "Foto"
-    ElementKind.BACKGROUND -> "BG"
+    ElementKind.CUTOUT -> "Karakter"
+    ElementKind.BACKGROUND -> "Background"
     ElementKind.STICKER -> "Stiker"
 }
 
@@ -1065,13 +1047,71 @@ private fun EditorPanel(
 ) {
     val sel = vm.selected
     var selectedTab by remember { mutableStateOf(EditorTab.ELEMENT) }
+    val customBgPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) vm.setCustomMode2Background(uri)
+    }
 
     Column(
         Modifier
             .fillMaxWidth()
-            .heightIn(min = 180.dp, max = 230.dp)
+            .heightIn(min = 210.dp, max = 265.dp)
             .background(MaterialTheme.colorScheme.surface),
     ) {
+        // Baris Pilih Layer Cepat: memudahkan memilih Karakter saja, Background saja, atau Kartu tanpa salah sentuh
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Pilih Layer:",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            val cutoutElements = vm.elements.filter { it.kind == ElementKind.CUTOUT }
+            cutoutElements.forEachIndexed { idx, el ->
+                val label = if (cutoutElements.size == 1) "Karakter" else "Karakter ${idx + 1}"
+                FilterChip(
+                    selected = sel?.id == el.id,
+                    onClick = {
+                        vm.select(el.id)
+                        selectedTab = EditorTab.ELEMENT
+                    },
+                    label = { Text(label) },
+                )
+            }
+            val bgElements = vm.elements.filter { it.kind == ElementKind.BACKGROUND }
+            bgElements.forEachIndexed { idx, el ->
+                val label = if (bgElements.size == 1) "Background" else "BG ${idx + 1}"
+                FilterChip(
+                    selected = sel?.id == el.id,
+                    onClick = {
+                        vm.select(el.id)
+                        selectedTab = EditorTab.ELEMENT
+                    },
+                    label = { Text(label) },
+                )
+            }
+            val cardElements = vm.elements.filter { it.kind == ElementKind.CARD }
+            cardElements.forEachIndexed { idx, el ->
+                val songTitle = vm.cards.getOrNull(el.refIndex)?.song?.title
+                val shortTitle = songTitle?.take(12)?.let { if (songTitle.length > 12) "$it…" else it } ?: "Kartu ${idx + 1}"
+                FilterChip(
+                    selected = sel?.id == el.id,
+                    onClick = {
+                        vm.select(el.id)
+                        selectedTab = EditorTab.ELEMENT
+                    },
+                    label = { Text(shortTitle) },
+                )
+            }
+        }
+
         TabRow(
             selectedTabIndex = selectedTab.ordinal,
             modifier = Modifier.fillMaxWidth(),
@@ -1105,7 +1145,7 @@ private fun EditorPanel(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.AspectRatio, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Kanvas")
+                        Text("Resolusi & Kanvas")
                     }
                 },
             )
@@ -1129,11 +1169,11 @@ private fun EditorPanel(
                             Box(
                                 Modifier
                                     .fillMaxSize()
-                                    .padding(16.dp),
+                                    .padding(12.dp),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
-                                    "Ketuk elemen kartu, foto, atau stiker di poster untuk mengatur posisi, ukuran, dan rotasi. Satu jari menggeser, dua jari untuk zoom & memutar.",
+                                    "Ketuk tombol 'Karakter', 'Background', atau kartu di atas (atau ketuk langsung di kanvas) untuk menggerakkan karakternya saja atau background-nya saja.",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -1141,8 +1181,8 @@ private fun EditorPanel(
                         } else {
                             val kindLabel = when (sel.kind) {
                                 ElementKind.CARD -> "Kartu lagu"
-                                ElementKind.CUTOUT -> "Foto cutout"
-                                ElementKind.BACKGROUND -> "Background"
+                                ElementKind.CUTOUT -> "Karakter (Terpisah dari Background)"
+                                ElementKind.BACKGROUND -> "Background (Terpisah dari Karakter)"
                                 ElementKind.STICKER -> "Stiker Bintang"
                             }
                             Row(
@@ -1155,13 +1195,16 @@ private fun EditorPanel(
                                     style = MaterialTheme.typography.titleSmall,
                                     modifier = Modifier.weight(1f),
                                 )
+                                IconButton(onClick = { vm.resetSelectedElement() }) {
+                                    Icon(Icons.Rounded.RestartAlt, contentDescription = "Reset elemen ini")
+                                }
                                 IconButton(onClick = { vm.bringForward() }) {
                                     Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "Maju satu layer")
                                 }
                                 IconButton(onClick = { vm.sendBackward() }) {
                                     Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Mundur satu layer")
                                 }
-                                if (sel.kind == ElementKind.CUTOUT || sel.kind == ElementKind.STICKER) {
+                                if (sel.kind == ElementKind.CUTOUT || sel.kind == ElementKind.BACKGROUND || sel.kind == ElementKind.STICKER) {
                                     IconButton(onClick = { vm.flipSelected() }) {
                                         Icon(Icons.Rounded.Flip, contentDescription = "Balik horizontal")
                                     }
@@ -1175,7 +1218,19 @@ private fun EditorPanel(
                                 }
                             }
 
-                            SliderRow("Ukuran", sel.scale, 0.10f..3.5f, onChange = { vm.setSelectedScale(it) })
+                            SliderRow(
+                                "Posisi X (kiri / kanan)",
+                                sel.cx.coerceIn(-0.5f, 1.5f),
+                                -0.5f..1.5f,
+                                onChange = { vm.setSelectedX(it) },
+                            )
+                            SliderRow(
+                                "Posisi Y (atas / bawah)",
+                                sel.cy.coerceIn(-0.5f, 1.5f),
+                                -0.5f..1.5f,
+                                onChange = { vm.setSelectedY(it) },
+                            )
+                            SliderRow("Ukuran", sel.scale, 0.15f..3.5f, onChange = { vm.setSelectedScale(it) })
                             SliderRow(
                                 "Sudut (putar)",
                                 sel.rotation.coerceIn(-180f, 180f),
@@ -1293,34 +1348,48 @@ private fun EditorPanel(
                             .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        Text("Rasio Poster", style = MaterialTheme.typography.labelMedium)
+                        Text("Resolusi & Rasio Poster", style = MaterialTheme.typography.labelMedium)
                         Row(
                             Modifier.horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            if (vm.mode == PosterMode.PHOTO3D) {
+                            PosterAspect.entries.forEach { a ->
                                 FilterChip(
-                                    selected = true,
-                                    onClick = {},
-                                    label = { Text("Potrait 9:16") },
+                                    selected = vm.aspect == a,
+                                    onClick = { vm.changeAspect(a) },
+                                    label = { Text(a.label) },
                                 )
-                            } else {
-                                PosterAspect.entries.forEach { a ->
-                                    FilterChip(
-                                        selected = vm.aspect == a,
-                                        onClick = { vm.changeAspect(a) },
-                                        label = { Text(a.label) },
-                                    )
-                                }
                             }
                         }
 
                         if (vm.mode == PosterMode.PHOTO3D) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Switch(checked = vm.sparkle, onCheckedChange = { vm.sparkle = it })
-                                Spacer(Modifier.width(8.dp))
-                                Text("Kilau bintang di sudut kartu", style = MaterialTheme.typography.bodyMedium)
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                OutlinedButton(
+                                    onClick = {
+                                        customBgPicker.launch(
+                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                        )
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Text("Ganti Foto Background")
+                                }
+                                if (vm.customMode2Bg != null) {
+                                    TextButton(onClick = { vm.clearCustomMode2Background() }) {
+                                        Text("Pakai BG Asli")
+                                    }
+                                }
                             }
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Switch(checked = vm.sparkle, onCheckedChange = { vm.sparkle = it })
+                            Spacer(Modifier.width(8.dp))
+                            Text("Kilau bintang di sudut & tepi kartu", style = MaterialTheme.typography.bodyMedium)
                         }
 
                         OutlinedButton(
@@ -1329,7 +1398,7 @@ private fun EditorPanel(
                         ) {
                             Icon(Icons.Rounded.RestartAlt, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text("Reset Posisi Elemen")
+                            Text("Reset Semua Posisi Elemen")
                         }
                     }
                 }

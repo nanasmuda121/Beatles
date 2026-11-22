@@ -138,6 +138,10 @@ fun ThemeScreen(
         DefaultThemeColor.toArgb()
     )
     val (dynamicTheme, onDynamicThemeChange) = rememberPreference(DynamicThemeKey, defaultValue = false)
+    val (softLightMode, onSoftLightModeChange) = rememberPreference(
+        com.nanzbeatles.nanas.constants.SoftLightModeKey,
+        defaultValue = true
+    )
 
     val isDarkSelected = darkMode != DarkMode.OFF
 
@@ -159,8 +163,17 @@ fun ThemeScreen(
         onSelectedThemeColorChange(DefaultThemeColor.toArgb())
     }
 
+    val selectSoftLightTheme: () -> Unit = {
+        onDarkModeChange(DarkMode.OFF)
+        onSoftLightModeChange(true)
+        onPureBlackChangeRaw(false)
+        onPureBlackMiniPlayerChange(false)
+        onSelectedThemeColorChange(DefaultThemeColor.toArgb())
+    }
+
     val selectWhiteTheme: () -> Unit = {
         onDarkModeChange(DarkMode.OFF)
+        onSoftLightModeChange(false)
         onPureBlackChangeRaw(false)
         onPureBlackMiniPlayerChange(false)
         onSelectedThemeColorChange(DefaultThemeColor.toArgb())
@@ -220,7 +233,11 @@ fun ThemeScreen(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "${visualStyle.title} • ${if (isDarkSelected) "Hitam" else "Putih"}${if (dynamicTheme) " • Cover" else ""}",
+                        text = "${visualStyle.title} • ${when {
+                            isDarkSelected -> "Hitam"
+                            softLightMode -> "Cerah Lembut"
+                            else -> "Putih"
+                        }}${if (dynamicTheme) " • Cover" else ""}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -286,7 +303,9 @@ fun ThemeScreen(
 
                     BlackWhiteThemeSelectorCard(
                         isDarkSelected = isDarkSelected,
+                        isSoftLightSelected = !isDarkSelected && softLightMode,
                         onSelectBlack = selectBlackTheme,
+                        onSelectSoftLight = selectSoftLightTheme,
                         onSelectWhite = selectWhiteTheme
                     )
 
@@ -352,10 +371,12 @@ fun ThemeScreen(
                     onSelectStyle = selectVisualStyle
                 )
 
-                // 2. WARNA DASAR: HITAM / PUTIH
+                // 2. WARNA DASAR: HITAM / CERAH LEMBUT / PUTIH
                 BlackWhiteThemeSelectorCard(
                     isDarkSelected = isDarkSelected,
+                    isSoftLightSelected = !isDarkSelected && softLightMode,
                     onSelectBlack = selectBlackTheme,
+                    onSelectSoftLight = selectSoftLightTheme,
                     onSelectWhite = selectWhiteTheme
                 )
 
@@ -663,7 +684,9 @@ private fun VisualStyleOptionItem(
 @Composable
 private fun BlackWhiteThemeSelectorCard(
     isDarkSelected: Boolean,
+    isSoftLightSelected: Boolean,
     onSelectBlack: () -> Unit,
+    onSelectSoftLight: () -> Unit,
     onSelectWhite: () -> Unit,
 ) {
     val isDarkSurface = MaterialTheme.colorScheme.surface.luminance() < 0.5f
@@ -679,12 +702,12 @@ private fun BlackWhiteThemeSelectorCard(
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
-                text = "Pilih Warna Dasar (Hitam / Putih)",
+                text = "Pilih Warna Dasar (Gelap / Cerah Lembut / Putih)",
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
-                text = "Hanya tersedia warna dasar Hitam dan Putih. Dapat dikombinasikan dengan gaya Liquid Glass maupun Editorial.",
+                text = "Tersedia mode Hitam, Cerah Lembut (terang nyaman yang tidak terlalu cerah/menyolok di mata), dan Putih.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 lineHeight = 16.sp
@@ -693,12 +716,12 @@ private fun BlackWhiteThemeSelectorCard(
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             // Option 1: TEMA HITAM
             ThemeModeOptionCard(
                 title = "Hitam",
-                subtitle = "Hitam Solid #000000",
+                subtitle = "Gelap #000000",
                 previewBg = Color.Black,
                 previewFg = Color.White,
                 previewCard = Color(0xFF16181E),
@@ -710,14 +733,29 @@ private fun BlackWhiteThemeSelectorCard(
                     .testTag("theme_option_black")
             )
 
-            // Option 2: TEMA PUTIH
+            // Option 2: TEMA CERAH LEMBUT (TIDAK TERLALU CERAH)
+            ThemeModeOptionCard(
+                title = "Cerah Lembut",
+                subtitle = "Tidak Silau",
+                previewBg = Color(0xFFE3E7EE),
+                previewFg = Color(0xFF151922),
+                previewCard = Color(0xFFD5DBE5),
+                isSelected = isSoftLightSelected,
+                isDarkSurface = isDarkSurface,
+                onClick = onSelectSoftLight,
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("theme_option_soft_light")
+            )
+
+            // Option 3: TEMA PUTIH
             ThemeModeOptionCard(
                 title = "Putih",
-                subtitle = "Putih Bersih #FFFFFF",
-                previewBg = Color.White,
+                subtitle = "Putih Cerah",
+                previewBg = Color(0xFFF6F8FC),
                 previewFg = Color(0xFF0A0C10),
-                previewCard = Color(0xFFECEEF3),
-                isSelected = !isDarkSelected,
+                previewCard = Color(0xFFE8ECF4),
+                isSelected = !isDarkSelected && !isSoftLightSelected,
                 isDarkSurface = isDarkSurface,
                 onClick = onSelectWhite,
                 modifier = Modifier

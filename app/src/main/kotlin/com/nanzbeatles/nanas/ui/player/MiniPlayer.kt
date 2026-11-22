@@ -428,24 +428,17 @@ private fun MiniPlayerDockedBall(
                             }
                         }
                 ) {
-                    // Backdrop inside the sphere
+                    // Backdrop inside the sphere (lightweight translucent glass, no real-time blur)
                     Box(
                         modifier = Modifier
                             .matchParentSize()
-                            .then(
-                                if (liquidGlassEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                    Modifier.blur(liquidGlassBlurRadius.coerceIn(12f, 35f).dp)
-                                } else {
-                                    Modifier
-                                }
-                            )
                             .background(
                                 color = if (isEditorial) {
-                                    if (useDarkTheme) Color(0xFF101014) else Color(0xFFF6F3EB)
+                                    if (useDarkTheme) Color(0xFF101014) else Color(0xFFEAE6DC)
                                 } else if (useDarkTheme) {
-                                    Color(0xFF0E121B).copy(alpha = 0.72f)
+                                    Color(0xFF0E121B).copy(alpha = 0.60f)
                                 } else {
-                                    Color(0xFF1A1F2C).copy(alpha = 0.78f)
+                                    Color(0xFFE6EAF2).copy(alpha = 0.72f)
                                 },
                                 shape = CircleShape
                             )
@@ -752,144 +745,38 @@ private fun NewMiniPlayer(
                 )
             }
     ) {
-        val accentColor = MaterialTheme.colorScheme.primary
-        val cyanTint = Color(0xFF64E9FF)
-        val topGlintColor = if (useDarkTheme) Color.White.copy(alpha = 0.72f) else Color.White.copy(alpha = 0.98f)
-        val bottomGlintColor = if (useDarkTheme) cyanTint.copy(alpha = 0.38f) else accentColor.copy(alpha = 0.28f)
+        val isSoftLight = com.nanzbeatles.nanas.ui.theme.LocalSoftLightMode.current
         Box(
             modifier = Modifier
                 .then(if (isTabletLandscape) Modifier.width(500.dp).align(Alignment.Center) else Modifier.fillMaxWidth())
                 .height(miniPlayerHeight.dp)
                 .offset { IntOffset(offsetXAnimatable.value.roundToInt(), 0) }
                 .clip(RoundedCornerShape(miniPlayerCornerRadius.dp))
-                .let { base ->
-                    if (!liquidGlassEnabled) {
-                        base.background(
-                            color = if (isEditorial) {
-                                if (useDarkTheme) Color(0xFF101014) else Color(0xFFF6F3EB)
-                            } else {
-                                if (pureBlack && useDarkTheme) Color.Black else MaterialTheme.colorScheme.surfaceContainer
-                            }
-                        )
-                    } else base
-                }
-                .drawWithContent {
-                    if (liquidGlassEnabled) {
-                        val topDomeDepth = size.height * 0.45f
-                        val bottomCausticDepth = size.height * 0.38f
-                        drawRect(
-                            brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.White.copy(alpha = if (useDarkTheme) 0.22f else 0.56f),
-                                    Color.Transparent
-                                ),
-                                startY = 0f,
-                                endY = topDomeDepth
-                            )
-                        )
-                        drawRect(
-                            brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.Transparent,
-                                    cyanTint.copy(alpha = if (useDarkTheme) 0.16f else 0.10f)
-                                ),
-                                startY = size.height - bottomCausticDepth,
-                                endY = size.height
-                            )
-                        )
-                    }
-                    drawContent()
-                    if (liquidGlassEnabled) {
-                        val glintWidth = size.width * 0.76f
-                        val startX = (size.width - glintWidth) / 2f
-                        drawLine(
-                            brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
-                                colors = listOf(Color.Transparent, topGlintColor, Color.Transparent),
-                                startX = startX,
-                                endX = startX + glintWidth
-                            ),
-                            start = Offset(startX, 1.2.dp.toPx()),
-                            end = Offset(startX + glintWidth, 1.2.dp.toPx()),
-                            strokeWidth = 1.5.dp.toPx(),
-                            cap = StrokeCap.Round
-                        )
-                        val bottomWidth = size.width * 0.58f
-                        val bottomStartX = (size.width - bottomWidth) / 2f
-                        drawLine(
-                            brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
-                                colors = listOf(Color.Transparent, bottomGlintColor, Color.Transparent),
-                                startX = bottomStartX,
-                                endX = bottomStartX + bottomWidth
-                            ),
-                            start = Offset(bottomStartX, size.height - 1.dp.toPx()),
-                            end = Offset(bottomStartX + bottomWidth, size.height - 1.dp.toPx()),
-                            strokeWidth = 1.15.dp.toPx(),
-                            cap = StrokeCap.Round
-                        )
-                    }
-                }
+                .background(
+                    color = when {
+                        isEditorial && useDarkTheme -> Color(0xFF101014)
+                        isEditorial && isSoftLight -> Color(0xFFDDD8CE)
+                        isEditorial -> Color(0xFFF6F3EB)
+                        !liquidGlassEnabled && pureBlack && useDarkTheme -> Color.Black
+                        !liquidGlassEnabled -> MaterialTheme.colorScheme.surfaceContainer
+                        useDarkTheme -> Color(0xFF10151F).copy(alpha = 0.64f)
+                        isSoftLight -> Color(0xFFE9EDF4).copy(alpha = 0.76f)
+                        else -> Color(0xFFF4F7FC).copy(alpha = 0.80f)
+                    },
+                    shape = RoundedCornerShape(miniPlayerCornerRadius.dp)
+                )
                 .border(
-                    width = if (isEditorial) 1.2.dp else 1.35.dp,
-                    brush = if (liquidGlassEnabled) {
-                        if (useDarkTheme) {
-                            androidx.compose.ui.graphics.Brush.linearGradient(
-                                listOf(
-                                    Color.White.copy(alpha = 0.78f),
-                                    cyanTint.copy(alpha = 0.50f),
-                                    Color.White.copy(alpha = 0.14f),
-                                    accentColor.copy(alpha = 0.42f),
-                                    Color.White.copy(alpha = 0.48f)
-                                )
-                            )
-                        } else {
-                            androidx.compose.ui.graphics.Brush.linearGradient(
-                                listOf(
-                                    Color.Black.copy(alpha = 0.16f),
-                                    cyanTint.copy(alpha = 0.45f),
-                                    Color.Black.copy(alpha = 0.08f),
-                                    accentColor.copy(alpha = 0.28f),
-                                    Color.Black.copy(alpha = 0.14f)
-                                )
-                            )
-                        }
-                    } else if (isEditorial) {
-                        androidx.compose.ui.graphics.SolidColor(
-                            if (useDarkTheme) Color(0xFFF5F2EB).copy(alpha = 0.28f)
-                            else Color(0xFF111111).copy(alpha = 0.24f)
-                        )
-                    } else {
-                        androidx.compose.ui.graphics.SolidColor(outlineColor.copy(alpha = 0.3f))
+                    width = if (isEditorial) 1.dp else 0.85.dp,
+                    color = when {
+                        isEditorial && useDarkTheme -> Color(0xFFF5F2EB).copy(alpha = 0.24f)
+                        isEditorial -> Color(0xFF111111).copy(alpha = 0.20f)
+                        liquidGlassEnabled && useDarkTheme -> Color.White.copy(alpha = 0.16f)
+                        liquidGlassEnabled -> Color(0xFF1C222D).copy(alpha = 0.12f)
+                        else -> outlineColor.copy(alpha = 0.25f)
                     },
                     shape = RoundedCornerShape(miniPlayerCornerRadius.dp)
                 )
         ) {
-            if (liquidGlassEnabled) {
-                // Lightweight Liquid Glass V2 smoked translucent backdrop with silver-blue & cyan caustic sheen
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .clip(RoundedCornerShape(miniPlayerCornerRadius.dp))
-                        .background(
-                            color = if (useDarkTheme) {
-                                Color(0xFF0F141E).copy(alpha = 0.78f)
-                            } else {
-                                Color(0xFFF3F6FC).copy(alpha = 0.86f)
-                            },
-                            shape = RoundedCornerShape(miniPlayerCornerRadius.dp)
-                        )
-                        .background(
-                            brush = androidx.compose.ui.graphics.Brush.linearGradient(
-                                listOf(
-                                    if (useDarkTheme) Color.White.copy(alpha = 0.20f) else Color.White.copy(alpha = 0.92f),
-                                    Color(0xFF1E90FF).copy(alpha = if (useDarkTheme) 0.14f else 0.08f),
-                                    Color.Transparent,
-                                    cyanTint.copy(alpha = if (useDarkTheme) 0.12f else 0.06f)
-                                )
-                            ),
-                            shape = RoundedCornerShape(miniPlayerCornerRadius.dp)
-                        )
-                )
-            }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 8.dp),

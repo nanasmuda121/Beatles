@@ -173,12 +173,17 @@ fun CreatePlaylistDialog(
                     ) {
                         SpotifyLogoIcon(
                             tint = spotifyGreen,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        YouTubeMusicLogoIcon(
+                            tint = Color(0xFFFF0033),
+                            modifier = Modifier.size(18.dp)
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            text = "Atau Import Playlist dari URL Spotify",
-                            fontSize = 13.sp,
+                            text = "Import Playlist via Link (Spotify / YT Music)",
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = spotifyGreen
                         )

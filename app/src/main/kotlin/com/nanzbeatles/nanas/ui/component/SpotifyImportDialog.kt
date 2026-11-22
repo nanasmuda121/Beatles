@@ -4,7 +4,6 @@
 
 package com.nanzbeatles.nanas.ui.component
 
-import android.os.Build
 import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
@@ -40,7 +39,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -61,10 +59,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -84,6 +80,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil3.compose.AsyncImage
+import com.nanzbeatles.innertube.models.SongItem
 import com.nanzbeatles.nanas.LocalDatabase
 import com.nanzbeatles.nanas.R
 import com.nanzbeatles.nanas.constants.LiquidGlassEffectKey
@@ -93,7 +90,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 private val SpotifyGreen = Color(0xFF1DB954)
-private val SpotifyGreenDark = Color(0xFF15883E)
+private val YtMusicRed = Color(0xFFFF0033)
 
 /**
  * Custom vector emblem for Spotify (circle with 3 curved acoustic waves).
@@ -154,11 +151,50 @@ fun SpotifyLogoIcon(
     }
 }
 
+/**
+ * Custom vector emblem for YouTube Music (red circle with white ring and play triangle).
+ */
+@Composable
+fun YouTubeMusicLogoIcon(
+    tint: Color = YtMusicRed,
+    modifier: Modifier = Modifier.size(24.dp)
+) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val r = minOf(w, h) / 2f
+        val center = Offset(w / 2f, h / 2f)
+
+        drawCircle(
+            color = tint,
+            radius = r,
+            center = center
+        )
+
+        drawCircle(
+            color = Color.White,
+            radius = r * 0.56f,
+            center = center,
+            style = Stroke(width = w * 0.07f)
+        )
+
+        val playPath = Path().apply {
+            moveTo(w * 0.42f, h * 0.36f)
+            lineTo(w * 0.64f, h * 0.50f)
+            lineTo(w * 0.42f, h * 0.64f)
+            close()
+        }
+        drawPath(playPath, color = Color.White)
+    }
+}
+
 @Composable
 fun SpotifyImportDialog(
     initialUrl: String = "",
     onDismiss: () -> Unit,
-    onPlaylistImported: ((playlistId: String) -> Unit)? = null
+    onPlaylistImported: ((playlistId: String) -> Unit)? = null,
+    onPlaySong: ((song: SongItem) -> Unit)? = null,
+    onOpenArtist: ((artistBrowseId: String) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val database = LocalDatabase.current
@@ -166,6 +202,7 @@ fun SpotifyImportDialog(
     val scope = rememberCoroutineScope()
 
     val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    @Suppress("UNUSED_VARIABLE")
     val liquidGlassEnabled by rememberPreference(LiquidGlassEffectKey, defaultValue = true)
 
     var urlInput by remember { mutableStateOf(initialUrl) }
@@ -177,27 +214,21 @@ fun SpotifyImportDialog(
     val selectedTrackIndices = remember { mutableStateListOf<Int>() }
 
     var isImporting by remember { mutableStateOf(false) }
+    var isQuickActionLoading by remember { mutableStateOf(false) }
     var importProgress by remember { mutableStateOf<SpotifyPlaylistImporter.ImportProgress?>(null) }
     var importSummary by remember { mutableStateOf<SpotifyPlaylistImporter.ImportSummary?>(null) }
     var activeJob by remember { mutableStateOf<Job?>(null) }
 
-    // Auto-detect Spotify URL in clipboard when opening dialog if initialUrl is empty
-    LaunchedEffect(Unit) {
-        if (urlInput.isBlank()) {
-            val clipText = clipboardManager.getText()?.text?.trim().orEmpty()
-            if (clipText.contains("spotify.com/", ignoreCase = true) ||
-                clipText.contains("spotify.link/", ignoreCase = true) ||
-                clipText.contains("spoti.fi/", ignoreCase = true) ||
-                clipText.startsWith("spotify:", ignoreCase = true)
-            ) {
-                urlInput = clipText
-            }
-        }
+    val isYtMusicMode = remember(urlInput, playlistData) {
+        playlistData?.platform == SpotifyPlaylistImporter.ImportSourcePlatform.YOUTUBE_MUSIC ||
+            (playlistData == null && SpotifyPlaylistImporter.isYouTubeMusicInput(urlInput))
     }
+    val activeAccent = if (isYtMusicMode) YtMusicRed else SpotifyGreen
+    val activeButtonContentColor = if (isYtMusicMode) Color.White else Color.Black
 
     fun triggerFetch(targetUrl: String) {
         if (targetUrl.isBlank()) {
-            fetchError = "Masukkan link Spotify terlebih dahulu"
+            fetchError = "Masukkan link Spotify atau YouTube Music terlebih dahulu"
             return
         }
         isFetchingPlaylist = true
@@ -212,7 +243,22 @@ fun SpotifyImportDialog(
                 selectedTrackIndices.clear()
                 selectedTrackIndices.addAll(data.tracks.indices)
             }.onFailure { err ->
-                fetchError = err.message ?: "Gagal mengambil data dari Spotify"
+                fetchError = err.message ?: "Gagal mengambil data playlist"
+            }
+        }
+    }
+
+    // Auto-fetch if initialUrl was passed via external share / deep link, or auto-detect clipboard
+    LaunchedEffect(initialUrl) {
+        if (initialUrl.isNotBlank()) {
+            urlInput = initialUrl
+            playlistData = null
+            importSummary = null
+            triggerFetch(initialUrl)
+        } else if (urlInput.isBlank()) {
+            val clipText = clipboardManager.getText()?.text?.trim().orEmpty()
+            if (SpotifyPlaylistImporter.isSupportedImportUrl(clipText)) {
+                urlInput = clipText
             }
         }
     }
@@ -235,7 +281,7 @@ fun SpotifyImportDialog(
             listOf(
                 SpotifyGreen.copy(alpha = 0.45f),
                 if (isDark) Color.White.copy(alpha = 0.14f) else Color.Black.copy(alpha = 0.10f),
-                SpotifyGreen.copy(alpha = 0.25f)
+                YtMusicRed.copy(alpha = 0.40f)
             )
         )
 
@@ -251,7 +297,7 @@ fun SpotifyImportDialog(
             tonalElevation = 8.dp
         ) {
             Box(modifier = Modifier.fillMaxWidth()) {
-                // Subtle top emerald ambient glow
+                // Subtle top ambient glow
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -259,7 +305,7 @@ fun SpotifyImportDialog(
                         .background(
                             Brush.verticalGradient(
                                 listOf(
-                                    SpotifyGreen.copy(alpha = if (isDark) 0.16f else 0.12f),
+                                    activeAccent.copy(alpha = if (isDark) 0.16f else 0.12f),
                                     Color.Transparent
                                 )
                             )
@@ -276,35 +322,57 @@ fun SpotifyImportDialog(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(SpotifyGreen.copy(alpha = 0.16f))
-                                .border(
-                                    1.dp,
-                                    SpotifyGreen.copy(alpha = 0.38f),
-                                    RoundedCornerShape(14.dp)
-                                ),
-                            contentAlignment = Alignment.Center
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy((-8).dp)
                         ) {
-                            SpotifyLogoIcon(
-                                tint = SpotifyGreen,
-                                modifier = Modifier.size(26.dp)
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(SpotifyGreen.copy(alpha = 0.16f))
+                                    .border(
+                                        1.dp,
+                                        SpotifyGreen.copy(alpha = 0.38f),
+                                        RoundedCornerShape(12.dp)
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                SpotifyLogoIcon(
+                                    tint = SpotifyGreen,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(YtMusicRed.copy(alpha = 0.16f))
+                                    .border(
+                                        1.dp,
+                                        YtMusicRed.copy(alpha = 0.38f),
+                                        RoundedCornerShape(12.dp)
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                YouTubeMusicLogoIcon(
+                                    tint = YtMusicRed,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
                         }
 
                         Spacer(Modifier.width(12.dp))
 
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Import dari Spotify",
+                                text = "Import via Link",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = if (isDark) Color.White else Color.Black
                             )
                             Text(
-                                text = "Masukkan link Playlist, Album, atau Lagu Spotify",
+                                text = "Playlist, Album, Lagu & Artis (Spotify / YT Music)",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
                             )
@@ -351,15 +419,15 @@ fun SpotifyImportDialog(
                                             urlInput = it
                                             fetchError = null
                                         },
-                                        label = { Text("URL Spotify") },
-                                        placeholder = { Text("https://open.spotify.com/playlist/...") },
+                                        label = { Text("Link Spotify / YouTube Music") },
+                                        placeholder = { Text("https://open.spotify.com/... atau music.youtube.com/...") },
                                         singleLine = true,
                                         enabled = !isFetchingPlaylist,
                                         shape = RoundedCornerShape(16.dp),
                                         colors = OutlinedTextFieldDefaults.colors(
-                                            focusedBorderColor = SpotifyGreen,
-                                            focusedLabelColor = SpotifyGreen,
-                                            cursorColor = SpotifyGreen
+                                            focusedBorderColor = activeAccent,
+                                            focusedLabelColor = activeAccent,
+                                            cursorColor = activeAccent
                                         ),
                                         trailingIcon = {
                                             if (urlInput.isNotEmpty() && !isFetchingPlaylist) {
@@ -379,7 +447,7 @@ fun SpotifyImportDialog(
 
                                     Spacer(Modifier.height(10.dp))
 
-                                    // Quick Paste from Clipboard + Example hint row
+                                    // Quick Paste from Clipboard + Supported platform badges
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -387,8 +455,8 @@ fun SpotifyImportDialog(
                                     ) {
                                         Surface(
                                             shape = RoundedCornerShape(12.dp),
-                                            color = SpotifyGreen.copy(alpha = 0.14f),
-                                            border = BorderStroke(1.dp, SpotifyGreen.copy(alpha = 0.32f)),
+                                            color = activeAccent.copy(alpha = 0.14f),
+                                            border = BorderStroke(1.dp, activeAccent.copy(alpha = 0.32f)),
                                             modifier = Modifier
                                                 .clip(RoundedCornerShape(12.dp))
                                                 .clickable(enabled = !isFetchingPlaylist) {
@@ -413,7 +481,7 @@ fun SpotifyImportDialog(
                                                 Icon(
                                                     painter = painterResource(R.drawable.link),
                                                     contentDescription = null,
-                                                    tint = SpotifyGreen,
+                                                    tint = activeAccent,
                                                     modifier = Modifier.size(15.dp)
                                                 )
                                                 Spacer(Modifier.width(6.dp))
@@ -421,14 +489,15 @@ fun SpotifyImportDialog(
                                                     text = "Tempel dari Clipboard",
                                                     fontSize = 12.sp,
                                                     fontWeight = FontWeight.SemiBold,
-                                                    color = SpotifyGreen
+                                                    color = activeAccent
                                                 )
                                             }
                                         }
 
                                         Text(
-                                            text = "Mendukung Playlist Publik",
+                                            text = "Spotify & YT Music",
                                             fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
                                             color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
                                         )
                                     }
@@ -473,8 +542,8 @@ fun SpotifyImportDialog(
                                             enabled = !isFetchingPlaylist && urlInput.isNotBlank(),
                                             shape = RoundedCornerShape(14.dp),
                                             colors = ButtonDefaults.buttonColors(
-                                                containerColor = SpotifyGreen,
-                                                contentColor = Color.Black
+                                                containerColor = activeAccent,
+                                                contentColor = activeButtonContentColor
                                             ),
                                             modifier = Modifier
                                                 .weight(1.5f)
@@ -483,7 +552,7 @@ fun SpotifyImportDialog(
                                         ) {
                                             if (isFetchingPlaylist) {
                                                 CircularProgressIndicator(
-                                                    color = Color.Black,
+                                                    color = activeButtonContentColor,
                                                     strokeWidth = 2.2.dp,
                                                     modifier = Modifier.size(18.dp)
                                                 )
@@ -499,6 +568,10 @@ fun SpotifyImportDialog(
 
                             "PREVIEW" -> {
                                 val data = playlistData ?: return@AnimatedContent
+                                val isYtSource = data.platform == SpotifyPlaylistImporter.ImportSourcePlatform.YOUTUBE_MUSIC
+                                val previewAccent = if (isYtSource) YtMusicRed else SpotifyGreen
+                                val previewBtnContent = if (isYtSource) Color.White else Color.Black
+
                                 Column(modifier = Modifier.fillMaxWidth()) {
                                     // Playlist Info Card
                                     Surface(
@@ -518,7 +591,7 @@ fun SpotifyImportDialog(
                                                 modifier = Modifier
                                                     .size(60.dp)
                                                     .clip(RoundedCornerShape(12.dp))
-                                                    .background(SpotifyGreen.copy(alpha = 0.2f)),
+                                                    .background(previewAccent.copy(alpha = 0.2f)),
                                                 contentAlignment = Alignment.Center
                                             ) {
                                                 if (!data.coverArtUrl.isNullOrBlank()) {
@@ -527,6 +600,11 @@ fun SpotifyImportDialog(
                                                         contentDescription = data.name,
                                                         contentScale = ContentScale.Crop,
                                                         modifier = Modifier.fillMaxSize()
+                                                    )
+                                                } else if (isYtSource) {
+                                                    YouTubeMusicLogoIcon(
+                                                        tint = YtMusicRed,
+                                                        modifier = Modifier.size(32.dp)
                                                     )
                                                 } else {
                                                     SpotifyLogoIcon(
@@ -548,7 +626,7 @@ fun SpotifyImportDialog(
                                                 )
                                                 if (data.subtitle.isNotBlank()) {
                                                     Text(
-                                                        text = data.subtitle,
+                                                        text = "${data.platform.label} • ${data.subtitle}",
                                                         style = MaterialTheme.typography.bodySmall,
                                                         color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B),
                                                         maxLines = 1,
@@ -558,13 +636,13 @@ fun SpotifyImportDialog(
                                                 Spacer(Modifier.height(4.dp))
                                                 Surface(
                                                     shape = RoundedCornerShape(6.dp),
-                                                    color = SpotifyGreen.copy(alpha = 0.18f)
+                                                    color = previewAccent.copy(alpha = 0.18f)
                                                 ) {
                                                     Text(
-                                                        text = "${data.tracks.size} Lagu ditemukan",
+                                                        text = "${data.type.label} • ${data.tracks.size} Lagu ditemukan",
                                                         fontSize = 11.sp,
                                                         fontWeight = FontWeight.Bold,
-                                                        color = SpotifyGreen,
+                                                        color = previewAccent,
                                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                                                     )
                                                 }
@@ -576,7 +654,92 @@ fun SpotifyImportDialog(
                                                     fetchError = null
                                                 }
                                             ) {
-                                                Text("Ganti", fontSize = 12.sp, color = SpotifyGreen)
+                                                Text("Ganti", fontSize = 12.sp, color = previewAccent)
+                                            }
+                                        }
+                                    }
+
+                                    // Quick Action Buttons for Single Track (Putar Lagu) or Artist (Buka Halaman Artis)
+                                    val firstTrack = data.tracks.firstOrNull()
+                                    val showPlayTrackQuickButton = onPlaySong != null &&
+                                        firstTrack != null &&
+                                        (data.type == SpotifyPlaylistImporter.SpotifyResourceType.TRACK || data.tracks.size == 1)
+                                    val showOpenArtistQuickButton = onOpenArtist != null &&
+                                        data.type == SpotifyPlaylistImporter.SpotifyResourceType.ARTIST
+
+                                    if (showPlayTrackQuickButton || showOpenArtistQuickButton) {
+                                        Spacer(Modifier.height(10.dp))
+                                        Button(
+                                            onClick = {
+                                                if (isQuickActionLoading) return@Button
+                                                isQuickActionLoading = true
+                                                activeJob?.cancel()
+                                                activeJob = scope.launch {
+                                                    if (showPlayTrackQuickButton && firstTrack != null) {
+                                                        val matchedSong = SpotifyPlaylistImporter.resolveSingleTrack(firstTrack)
+                                                        isQuickActionLoading = false
+                                                        if (matchedSong != null) {
+                                                            onPlaySong?.invoke(matchedSong)
+                                                            onDismiss()
+                                                        } else {
+                                                            Toast.makeText(
+                                                                context,
+                                                                "Gagal menemukan lagu yang cocok untuk diputar",
+                                                                Toast.LENGTH_SHORT
+                                                            ).show()
+                                                        }
+                                                    } else if (showOpenArtistQuickButton) {
+                                                        val artistId = SpotifyPlaylistImporter.resolveArtistBrowseId(data)
+                                                        isQuickActionLoading = false
+                                                        if (artistId != null) {
+                                                            onOpenArtist?.invoke(artistId)
+                                                            onDismiss()
+                                                        } else {
+                                                            Toast.makeText(
+                                                                context,
+                                                                "Halaman artis tidak ditemukan, silakan import daftar lagunya di bawah",
+                                                                Toast.LENGTH_SHORT
+                                                            ).show()
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            enabled = !isQuickActionLoading,
+                                            shape = RoundedCornerShape(14.dp),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = previewAccent,
+                                                contentColor = previewBtnContent
+                                            ),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(46.dp)
+                                        ) {
+                                            if (isQuickActionLoading) {
+                                                CircularProgressIndicator(
+                                                    color = previewBtnContent,
+                                                    strokeWidth = 2.dp,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                                Spacer(Modifier.width(8.dp))
+                                                Text("Membuka...", fontWeight = FontWeight.Bold)
+                                            } else {
+                                                Icon(
+                                                    painter = painterResource(
+                                                        if (showPlayTrackQuickButton) R.drawable.play else R.drawable.artist
+                                                    ),
+                                                    contentDescription = null,
+                                                    tint = previewBtnContent,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                                Spacer(Modifier.width(8.dp))
+                                                Text(
+                                                    text = if (showPlayTrackQuickButton) {
+                                                        "Putar Lagu Sekarang"
+                                                    } else {
+                                                        "Buka Halaman Artis (${data.name})"
+                                                    },
+                                                    fontWeight = FontWeight.Bold
+                                                )
                                             }
                                         }
                                     }
@@ -591,9 +754,9 @@ fun SpotifyImportDialog(
                                         singleLine = true,
                                         shape = RoundedCornerShape(14.dp),
                                         colors = OutlinedTextFieldDefaults.colors(
-                                            focusedBorderColor = SpotifyGreen,
-                                            focusedLabelColor = SpotifyGreen,
-                                            cursorColor = SpotifyGreen
+                                            focusedBorderColor = previewAccent,
+                                            focusedLabelColor = previewAccent,
+                                            cursorColor = previewAccent
                                         ),
                                         modifier = Modifier.fillMaxWidth()
                                     )
@@ -627,7 +790,7 @@ fun SpotifyImportDialog(
                                             Text(
                                                 text = if (allSelected) "Hapus Pilihan" else "Pilih Semua",
                                                 fontSize = 12.sp,
-                                                color = SpotifyGreen,
+                                                color = previewAccent,
                                                 fontWeight = FontWeight.SemiBold
                                             )
                                         }
@@ -678,8 +841,8 @@ fun SpotifyImportDialog(
                                                             }
                                                         },
                                                         colors = CheckboxDefaults.colors(
-                                                            checkedColor = SpotifyGreen,
-                                                            checkmarkColor = Color.Black
+                                                            checkedColor = previewAccent,
+                                                            checkmarkColor = previewBtnContent
                                                         ),
                                                         modifier = Modifier.size(32.dp)
                                                     )
@@ -695,7 +858,7 @@ fun SpotifyImportDialog(
                                                             overflow = TextOverflow.Ellipsis
                                                         )
                                                         Text(
-                                                            text = track.artist.ifBlank { "Unknown Artist" },
+                                                            text = track.artist.ifBlank { "Artis tidak diketahui" },
                                                             style = MaterialTheme.typography.bodySmall,
                                                             color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B),
                                                             maxLines = 1,
@@ -745,7 +908,7 @@ fun SpotifyImportDialog(
                                                     totalCount = chosenTracks.size,
                                                     matchedCount = 0,
                                                     failedCount = 0,
-                                                    currentTrackTitle = "Menyiapkan pencarian lagu..."
+                                                    currentTrackTitle = "Menyiapkan import lagu..."
                                                 )
 
                                                 activeJob = scope.launch {
@@ -770,8 +933,8 @@ fun SpotifyImportDialog(
                                             enabled = selectedTrackIndices.isNotEmpty(),
                                             shape = RoundedCornerShape(14.dp),
                                             colors = ButtonDefaults.buttonColors(
-                                                containerColor = SpotifyGreen,
-                                                contentColor = Color.Black
+                                                containerColor = previewAccent,
+                                                contentColor = previewBtnContent
                                             ),
                                             modifier = Modifier
                                                 .weight(1.6f)
@@ -802,7 +965,7 @@ fun SpotifyImportDialog(
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
                                     CircularProgressIndicator(
-                                        color = SpotifyGreen,
+                                        color = activeAccent,
                                         strokeWidth = 3.5.dp,
                                         modifier = Modifier.size(54.dp)
                                     )
@@ -810,7 +973,7 @@ fun SpotifyImportDialog(
                                     Spacer(Modifier.height(18.dp))
 
                                     Text(
-                                        text = "Mencocokkan & Mengimport Lagu...",
+                                        text = "Mengimport Lagu ke Pustaka...",
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold
                                     )
@@ -831,8 +994,8 @@ fun SpotifyImportDialog(
 
                                     LinearProgressIndicator(
                                         progress = { animatedFrac },
-                                        color = SpotifyGreen,
-                                        trackColor = SpotifyGreen.copy(alpha = 0.18f),
+                                        color = activeAccent,
+                                        trackColor = activeAccent.copy(alpha = 0.18f),
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .height(8.dp)
@@ -853,7 +1016,7 @@ fun SpotifyImportDialog(
                                         Text(
                                             text = "Berhasil: ${prog?.matchedCount ?: 0}",
                                             style = MaterialTheme.typography.labelMedium,
-                                            color = SpotifyGreen,
+                                            color = activeAccent,
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
@@ -872,14 +1035,14 @@ fun SpotifyImportDialog(
                                         modifier = Modifier
                                             .size(64.dp)
                                             .clip(CircleShape)
-                                            .background(SpotifyGreen.copy(alpha = 0.18f))
-                                            .border(1.5.dp, SpotifyGreen, CircleShape),
+                                            .background(activeAccent.copy(alpha = 0.18f))
+                                            .border(1.5.dp, activeAccent, CircleShape),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Icon(
                                             painter = painterResource(R.drawable.check),
                                             contentDescription = null,
-                                            tint = SpotifyGreen,
+                                            tint = activeAccent,
                                             modifier = Modifier.size(34.dp)
                                         )
                                     }
@@ -934,8 +1097,8 @@ fun SpotifyImportDialog(
                                                 },
                                                 shape = RoundedCornerShape(14.dp),
                                                 colors = ButtonDefaults.buttonColors(
-                                                    containerColor = SpotifyGreen,
-                                                    contentColor = Color.Black
+                                                    containerColor = activeAccent,
+                                                    contentColor = activeButtonContentColor
                                                 ),
                                                 modifier = Modifier
                                                     .weight(1.4f)

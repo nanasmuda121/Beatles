@@ -98,8 +98,11 @@ import com.nanzbeatles.nanas.constants.HideExplicitKey
 import com.nanzbeatles.nanas.constants.LiquidGlassEffectKey
 import com.nanzbeatles.nanas.constants.SongSortType
 import com.nanzbeatles.nanas.constants.YtmSyncKey
+import com.nanzbeatles.innertube.models.WatchEndpoint
 import com.nanzbeatles.nanas.extensions.toMediaItem
+import com.nanzbeatles.nanas.models.toMediaMetadata
 import com.nanzbeatles.nanas.playback.queues.ListQueue
+import com.nanzbeatles.nanas.playback.queues.YouTubeQueue
 import com.nanzbeatles.nanas.ui.component.CreatePlaylistDialog
 import com.nanzbeatles.nanas.ui.component.LibraryArtistGridItem
 import com.nanzbeatles.nanas.ui.component.LibraryArtistListItem
@@ -109,6 +112,7 @@ import com.nanzbeatles.nanas.ui.component.LocalMenuState
 import com.nanzbeatles.nanas.ui.component.SongListItem
 import com.nanzbeatles.nanas.ui.component.SpotifyImportDialog
 import com.nanzbeatles.nanas.ui.component.SpotifyLogoIcon
+import com.nanzbeatles.nanas.ui.component.YouTubeMusicLogoIcon
 import com.nanzbeatles.nanas.ui.menu.SongMenu
 import com.nanzbeatles.nanas.utils.rememberPreference
 import com.nanzbeatles.nanas.viewmodels.LibraryArtistsViewModel
@@ -255,6 +259,17 @@ fun LibraryScreen(
             onDismiss = { showSpotifyImportDialog = false },
             onPlaylistImported = { importedPlaylistId ->
                 navController.navigate("local_playlist/$importedPlaylistId")
+            },
+            onPlaySong = { matchedSong ->
+                playerConnection?.playQueue(
+                    YouTubeQueue(
+                        WatchEndpoint(videoId = matchedSong.id),
+                        matchedSong.toMediaMetadata()
+                    )
+                )
+            },
+            onOpenArtist = { artistBrowseId ->
+                navController.navigate("artist/$artistBrowseId")
             }
         )
     }
@@ -862,9 +877,14 @@ private fun ImportSpotifyPlaylistGlassButton(
                 tint = spotifyGreen,
                 modifier = Modifier.size(20.dp)
             )
+            Spacer(modifier = Modifier.width(6.dp))
+            YouTubeMusicLogoIcon(
+                tint = Color(0xFFFF0033),
+                modifier = Modifier.size(20.dp)
+            )
             Spacer(modifier = Modifier.width(10.dp))
             Text(
-                text = "Import Playlist dari Spotify",
+                text = "Import Playlist (Spotify / YT Music)",
                 color = if (isDark) Color.White else Color(0xFF0A0C10),
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,

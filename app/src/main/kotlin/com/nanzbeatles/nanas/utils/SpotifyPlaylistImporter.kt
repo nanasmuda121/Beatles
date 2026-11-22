@@ -4,9 +4,12 @@
 
 package com.nanzbeatles.nanas.utils
 
+import android.net.Uri
 import android.text.Html
 import com.nanzbeatles.innertube.YouTube
+import com.nanzbeatles.innertube.models.ArtistItem
 import com.nanzbeatles.innertube.models.SongItem
+import com.nanzbeatles.innertube.utils.completed
 import com.nanzbeatles.nanas.db.MusicDatabase
 import com.nanzbeatles.nanas.db.entities.PlaylistEntity
 import com.nanzbeatles.nanas.db.entities.PlaylistSongMap
@@ -45,10 +48,16 @@ object SpotifyPlaylistImporter {
             .build()
     }
 
+    enum class ImportSourcePlatform(val label: String) {
+        SPOTIFY("Spotify"),
+        YOUTUBE_MUSIC("YouTube Music")
+    }
+
     enum class SpotifyResourceType(val pathSegment: String, val label: String) {
         PLAYLIST("playlist", "Playlist"),
         ALBUM("album", "Album"),
-        TRACK("track", "Lagu")
+        TRACK("track", "Lagu"),
+        ARTIST("artist", "Artis")
     }
 
     data class SpotifyParsedUrl(
@@ -57,12 +66,20 @@ object SpotifyPlaylistImporter {
         val canonicalUrl: String
     )
 
+    data class YouTubeParsedUrl(
+        val type: SpotifyResourceType,
+        val id: String,
+        val videoId: String? = null,
+        val canonicalUrl: String
+    )
+
     data class SpotifyTrackInfo(
         val id: String,
         val title: String,
         val artist: String,
         val durationMs: Long = 0L,
-        val thumbnailUrl: String? = null
+        val thumbnailUrl: String? = null,
+        val directSongItem: SongItem? = null
     ) {
         val formattedDuration: String
             get() {
@@ -80,7 +97,8 @@ object SpotifyPlaylistImporter {
         val name: String,
         val subtitle: String,
         val coverArtUrl: String?,
-        val tracks: List<SpotifyTrackInfo>
+        val tracks: List<SpotifyTrackInfo>,
+        val platform: ImportSourcePlatform = ImportSourcePlatform.SPOTIFY
     )
 
     data class ImportProgress(
@@ -102,6 +120,420 @@ object SpotifyPlaylistImporter {
         val failedTracks: List<SpotifyTrackInfo>
     )
 
+    fun isSupportedImportUrl(text: String): Boolean {
+        val lower = text.lowercase()
+        return lower.contains("spotify.com/") ||
+            lower.contains("spotify.link/") ||
+            lower.contains("spoti.fi/") ||
+            lower.startsWith("spotify:") ||
+            lower.contains("music.youtube.com/") ||
+            lower.contains("youtube.com/") ||
+            lower.contains("youtu.be/")
+    }
+
+    fun isSpotifyUrl(text: String): Boolean {
+        val lower = text.trim().lowercase()
+        return lower.contains("spotify.com/") ||
+            lower.contains("spotify.link/") ||
+            lower.contains("spoti.fi/") ||
+            lower.startsWith("spotify:")
+    }
+
+    /**
+     * Extracts the first valid URL or Spotify URI from shared text (e.g. "Listen to my playlist https://open.spotify.com/...").
+     */
+    fun extractSupportedUrl(rawText: String): String? {
+        val trimmed = rawText.trim()
+        if (trimmed.isEmpty()) return null
+        if (trimmed.startsWith("spotify:", ignoreCase = true)) {
+            return trimmed.split(Regex("\\s+")).firstOrNull()
+        }
+        val urlRegex = Regex("""https?://[^\s"'<>]+""", RegexOption.IGNORE_CASE)
+        val matched = urlRegex.findAll(trimmed).map { it.value.trimEnd('.', ',', ')', ']', ';') }
+            .firstOrNull { isSupportedImportUrl(it) }
+        if (matched != null) return matched
+        return if (isSupportedImportUrl(trimmed)) trimmed else null
+    }
+
+    fun isYouTubeMusicInput(rawInput: String): Boolean {
+        val trimmed = rawInput.trim()
+        val lower = trimmed.lowercase()
+        if (lower.contains("music.youtube.com") ||
+            lower.contains("youtube.com") ||
+            lower.contains("youtu.be")
+        ) return true
+        // Direct YouTube / YouTube Music playlist, album, or artist IDs (PL..., OLAK5uy_..., VL..., MPREb_..., RD..., UC...)
+        if (trimmed.startsWith("PL") ||
+            trimmed.startsWith("VL") ||
+            trimmed.startsWith("OLAK5uy_") ||
+            trimmed.startsWith("MPREb_") ||
+            trimmed.startsWith("RDCLAK5uy_") ||
+            trimmed.startsWith("UC")
+        ) return true
+        return false
+    }
+
+    /**
+     * Universal entry point: fetches playlist/album/track from either Spotify or YouTube Music / YouTube link.
+     */
+    suspend fun fetchSpotifyPlaylist(rawUrl: String): Result<SpotifyPlaylistData> = withContext(Dispatchers.IO) {
+        val trimmed = rawUrl.trim()
+        if (trimmed.isEmpty()) {
+            return@withContext Result.failure(
+                IllegalArgumentException("Masukkan link Spotify atau YouTube Music terlebih dahulu")
+            )
+        }
+        if (isYouTubeMusicInput(trimmed)) {
+            fetchYouTubeMusicPlaylist(trimmed)
+        } else {
+            fetchSpotifyOnlyPlaylist(trimmed)
+        }
+    }
+
+    /**
+     * Parses a YouTube Music / YouTube URL or direct playlist/album ID.
+     */
+    private fun parseYouTubeMusicUrl(rawInput: String): Result<YouTubeParsedUrl> {
+        return try {
+            val trimmed = rawInput.trim()
+
+            // Direct ID input without URL
+            if (!trimmed.contains("/") && !trimmed.contains(".")) {
+                return when {
+                    trimmed.startsWith("MPREb_") -> Result.success(
+                        YouTubeParsedUrl(
+                            type = SpotifyResourceType.ALBUM,
+                            id = trimmed,
+                            canonicalUrl = "https://music.youtube.com/browse/$trimmed"
+                        )
+                    )
+                    trimmed.startsWith("UC") -> Result.success(
+                        YouTubeParsedUrl(
+                            type = SpotifyResourceType.ARTIST,
+                            id = trimmed,
+                            canonicalUrl = "https://music.youtube.com/channel/$trimmed"
+                        )
+                    )
+                    trimmed.startsWith("PL") || trimmed.startsWith("VL") ||
+                        trimmed.startsWith("OLAK5uy_") || trimmed.startsWith("RD") -> {
+                        val cleanId = trimmed.removePrefix("VL")
+                        Result.success(
+                            YouTubeParsedUrl(
+                                type = SpotifyResourceType.PLAYLIST,
+                                id = cleanId,
+                                canonicalUrl = "https://music.youtube.com/playlist?list=$cleanId"
+                            )
+                        )
+                    }
+                    else -> Result.failure(
+                        IllegalArgumentException("Format link tidak dikenali. Gunakan link dari Spotify atau YouTube Music.")
+                    )
+                }
+            }
+
+            val urlRegex = Regex("""https?://[^\s"'<>]+""", RegexOption.IGNORE_CASE)
+            var candidateUrl = urlRegex.find(trimmed)?.value ?: trimmed
+            if (!candidateUrl.startsWith("http://", ignoreCase = true) &&
+                !candidateUrl.startsWith("https://", ignoreCase = true)
+            ) {
+                candidateUrl = "https://$candidateUrl"
+            }
+
+            val uri = Uri.parse(candidateUrl)
+            val host = uri.host?.lowercase().orEmpty()
+            val pathSegments = uri.pathSegments.orEmpty()
+            val listParam = uri.getQueryParameter("list")?.takeIf { it.isNotBlank() }
+            val vParam = uri.getQueryParameter("v")?.takeIf { it.isNotBlank() }
+                ?: if (host.contains("youtu.be")) pathSegments.firstOrNull()?.takeIf { it.isNotBlank() } else null
+
+            // 1. Check /channel/UC... or /c/... or /user/...
+            val channelIdx = pathSegments.indexOfFirst {
+                it.equals("channel", ignoreCase = true) ||
+                    it.equals("c", ignoreCase = true) ||
+                    it.equals("user", ignoreCase = true)
+            }
+            if (channelIdx >= 0 && channelIdx + 1 < pathSegments.size) {
+                val artistId = pathSegments[channelIdx + 1]
+                return Result.success(
+                    YouTubeParsedUrl(
+                        type = SpotifyResourceType.ARTIST,
+                        id = artistId,
+                        canonicalUrl = "https://music.youtube.com/channel/$artistId"
+                    )
+                )
+            }
+
+            // 2. Check /browse/MPREb_..., /browse/UC..., or /browse/VL...
+            val browseIdx = pathSegments.indexOfFirst { it.equals("browse", ignoreCase = true) }
+            if (browseIdx >= 0 && browseIdx + 1 < pathSegments.size) {
+                val browseId = pathSegments[browseIdx + 1]
+                return when {
+                    browseId.startsWith("MPREb_") -> Result.success(
+                        YouTubeParsedUrl(
+                            type = SpotifyResourceType.ALBUM,
+                            id = browseId,
+                            canonicalUrl = "https://music.youtube.com/browse/$browseId"
+                        )
+                    )
+                    browseId.startsWith("UC") -> Result.success(
+                        YouTubeParsedUrl(
+                            type = SpotifyResourceType.ARTIST,
+                            id = browseId,
+                            canonicalUrl = "https://music.youtube.com/channel/$browseId"
+                        )
+                    )
+                    else -> {
+                        val cleanId = browseId.removePrefix("VL")
+                        Result.success(
+                            YouTubeParsedUrl(
+                                type = SpotifyResourceType.PLAYLIST,
+                                id = cleanId,
+                                canonicalUrl = "https://music.youtube.com/playlist?list=$cleanId"
+                            )
+                        )
+                    }
+                }
+            }
+
+            // 3. Check ?list=... parameter (playlist or watch with list)
+            if (!listParam.isNullOrBlank()) {
+                val cleanListId = listParam.removePrefix("VL")
+                return Result.success(
+                    YouTubeParsedUrl(
+                        type = SpotifyResourceType.PLAYLIST,
+                        id = cleanListId,
+                        videoId = vParam,
+                        canonicalUrl = "https://music.youtube.com/playlist?list=$cleanListId"
+                    )
+                )
+            }
+
+            // 4. Check single track (?v=... or youtu.be/...)
+            if (!vParam.isNullOrBlank()) {
+                return Result.success(
+                    YouTubeParsedUrl(
+                        type = SpotifyResourceType.TRACK,
+                        id = vParam,
+                        videoId = vParam,
+                        canonicalUrl = "https://music.youtube.com/watch?v=$vParam"
+                    )
+                )
+            }
+
+            Result.failure(
+                IllegalArgumentException(
+                    "Format URL YouTube Music tidak valid. Gunakan link Playlist, Album, Lagu, atau Artis dari YouTube Music."
+                )
+            )
+        } catch (e: Exception) {
+            Timber.tag(TAG).e(e, "Failed to parse YouTube Music URL: $rawInput")
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Fetches playlist, album, or track directly from YouTube Music via InnerTube.
+     */
+    private suspend fun fetchYouTubeMusicPlaylist(rawUrl: String): Result<SpotifyPlaylistData> = withContext(Dispatchers.IO) {
+        val parsed = parseYouTubeMusicUrl(rawUrl).getOrElse { return@withContext Result.failure(it) }
+
+        try {
+            when (parsed.type) {
+                SpotifyResourceType.PLAYLIST -> {
+                    val page = YouTube.playlist(parsed.id).completed().getOrNull()
+                    if (page != null && page.songs.isNotEmpty()) {
+                        val tracks = page.songs.map { song -> song.toSpotifyTrackInfo() }
+                        val author = page.playlist.author?.name?.takeIf { it.isNotBlank() } ?: "YouTube Music"
+                        val cover = page.playlist.thumbnail?.takeIf { it.isNotBlank() }
+                            ?: tracks.firstOrNull()?.thumbnailUrl
+                        return@withContext Result.success(
+                            SpotifyPlaylistData(
+                                id = parsed.id,
+                                type = SpotifyResourceType.PLAYLIST,
+                                name = page.playlist.title.ifBlank { "YouTube Music Playlist" },
+                                subtitle = author,
+                                coverArtUrl = cover,
+                                tracks = tracks,
+                                platform = ImportSourcePlatform.YOUTUBE_MUSIC
+                            )
+                        )
+                    }
+
+                    // Fallback: try as Album (e.g. OLAK5uy_ album playlist IDs) or queue
+                    val albumPage = YouTube.album(parsed.id).getOrNull()
+                    if (albumPage != null && albumPage.songs.isNotEmpty()) {
+                        val tracks = albumPage.songs.map { song -> song.toSpotifyTrackInfo() }
+                        val artistName = albumPage.album.artists?.joinToString(", ") { it.name }
+                            ?.takeIf { it.isNotBlank() } ?: "YouTube Music"
+                        return@withContext Result.success(
+                            SpotifyPlaylistData(
+                                id = parsed.id,
+                                type = SpotifyResourceType.ALBUM,
+                                name = albumPage.album.title.ifBlank { "YouTube Music Album" },
+                                subtitle = artistName,
+                                coverArtUrl = albumPage.album.thumbnail.takeIf { it.isNotBlank() },
+                                tracks = tracks,
+                                platform = ImportSourcePlatform.YOUTUBE_MUSIC
+                            )
+                        )
+                    }
+
+                    val queueSongs = YouTube.queue(playlistId = parsed.id).getOrNull().orEmpty()
+                    if (queueSongs.isNotEmpty()) {
+                        val tracks = queueSongs.map { song -> song.toSpotifyTrackInfo() }
+                        return@withContext Result.success(
+                            SpotifyPlaylistData(
+                                id = parsed.id,
+                                type = SpotifyResourceType.PLAYLIST,
+                                name = "YouTube Music Playlist",
+                                subtitle = "YouTube Music",
+                                coverArtUrl = tracks.firstOrNull()?.thumbnailUrl,
+                                tracks = tracks,
+                                platform = ImportSourcePlatform.YOUTUBE_MUSIC
+                            )
+                        )
+                    }
+
+                    // If URL also had a videoId (e.g. radio mix RD... that requires videoId), try single track
+                    if (!parsed.videoId.isNullOrBlank()) {
+                        val singleSongs = YouTube.queue(videoIds = listOf(parsed.videoId)).getOrNull().orEmpty()
+                        if (singleSongs.isNotEmpty()) {
+                            val tracks = singleSongs.map { it.toSpotifyTrackInfo() }
+                            val first = tracks.first()
+                            return@withContext Result.success(
+                                SpotifyPlaylistData(
+                                    id = parsed.videoId,
+                                    type = SpotifyResourceType.TRACK,
+                                    name = first.title,
+                                    subtitle = first.artist.ifBlank { "YouTube Music" },
+                                    coverArtUrl = first.thumbnailUrl,
+                                    tracks = tracks,
+                                    platform = ImportSourcePlatform.YOUTUBE_MUSIC
+                                )
+                            )
+                        }
+                    }
+
+                    Result.failure(
+                        IllegalStateException(
+                            "Tidak dapat mengambil daftar lagu dari YouTube Music. Pastikan playlist bersifat Publik (Public) atau Tidak Terdaftar (Unlisted)."
+                        )
+                    )
+                }
+
+                SpotifyResourceType.ALBUM -> {
+                    val albumPage = YouTube.album(parsed.id).getOrNull()
+                        ?: return@withContext Result.failure(
+                            IllegalStateException("Gagal memuat album dari YouTube Music.")
+                        )
+                    if (albumPage.songs.isEmpty()) {
+                        return@withContext Result.failure(
+                            IllegalStateException("Album YouTube Music tidak memiliki daftar lagu.")
+                        )
+                    }
+                    val tracks = albumPage.songs.map { song -> song.toSpotifyTrackInfo() }
+                    val artistName = albumPage.album.artists?.joinToString(", ") { it.name }
+                        ?.takeIf { it.isNotBlank() } ?: "YouTube Music"
+                    Result.success(
+                        SpotifyPlaylistData(
+                            id = parsed.id,
+                            type = SpotifyResourceType.ALBUM,
+                            name = albumPage.album.title.ifBlank { "YouTube Music Album" },
+                            subtitle = artistName,
+                            coverArtUrl = albumPage.album.thumbnail.takeIf { it.isNotBlank() }
+                                ?: tracks.firstOrNull()?.thumbnailUrl,
+                            tracks = tracks,
+                            platform = ImportSourcePlatform.YOUTUBE_MUSIC
+                        )
+                    )
+                }
+
+                SpotifyResourceType.TRACK -> {
+                    val queueSongs = YouTube.queue(videoIds = listOf(parsed.id)).getOrNull().orEmpty()
+                    if (queueSongs.isEmpty()) {
+                        return@withContext Result.failure(
+                            IllegalStateException("Gagal memuat lagu dari YouTube Music.")
+                        )
+                    }
+                    val tracks = queueSongs.map { song -> song.toSpotifyTrackInfo() }
+                    val first = tracks.first()
+                    Result.success(
+                        SpotifyPlaylistData(
+                            id = parsed.id,
+                            type = SpotifyResourceType.TRACK,
+                            name = first.title,
+                            subtitle = first.artist.ifBlank { "YouTube Music" },
+                            coverArtUrl = first.thumbnailUrl,
+                            tracks = tracks,
+                            platform = ImportSourcePlatform.YOUTUBE_MUSIC
+                        )
+                    )
+                }
+
+                SpotifyResourceType.ARTIST -> {
+                    val artistPage = YouTube.artist(parsed.id).getOrNull()
+                        ?: return@withContext Result.failure(
+                            IllegalStateException("Gagal memuat halaman artis dari YouTube Music.")
+                        )
+                    val artistSongs = artistPage.sections
+                        .flatMap { it.items }
+                        .filterIsInstance<SongItem>()
+                        .distinctBy { it.id }
+
+                    val tracks = if (artistSongs.isNotEmpty()) {
+                        artistSongs.map { it.toSpotifyTrackInfo() }
+                    } else {
+                        // Fallback: search top songs by artist title
+                        YouTube.search(artistPage.artist.title, YouTube.SearchFilter.FILTER_SONG)
+                            .getOrNull()
+                            ?.items
+                            ?.filterIsInstance<SongItem>()
+                            .orEmpty()
+                            .take(25)
+                            .map { it.toSpotifyTrackInfo() }
+                    }
+
+                    if (tracks.isEmpty()) {
+                        return@withContext Result.failure(
+                            IllegalStateException("Tidak menemukan daftar lagu untuk artis ${artistPage.artist.title}.")
+                        )
+                    }
+
+                    Result.success(
+                        SpotifyPlaylistData(
+                            id = parsed.id,
+                            type = SpotifyResourceType.ARTIST,
+                            name = artistPage.artist.title.ifBlank { "YouTube Music Artist" },
+                            subtitle = artistPage.subscriberCountText ?: "Artis YouTube Music",
+                            coverArtUrl = artistPage.artist.thumbnail?.takeIf { it.isNotBlank() }
+                                ?: tracks.firstOrNull()?.thumbnailUrl,
+                            tracks = tracks,
+                            platform = ImportSourcePlatform.YOUTUBE_MUSIC
+                        )
+                    )
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Timber.tag(TAG).e(e, "Error fetching YouTube Music playlist data")
+            Result.failure(
+                Exception("Gagal memuat dari YouTube Music: ${e.localizedMessage ?: "Periksa koneksi internet"}")
+            )
+        }
+    }
+
+    private fun SongItem.toSpotifyTrackInfo(): SpotifyTrackInfo {
+        return SpotifyTrackInfo(
+            id = id,
+            title = title,
+            artist = artists.joinToString(", ") { it.name },
+            durationMs = (duration ?: 0).toLong() * 1000L,
+            thumbnailUrl = thumbnail.takeIf { it.isNotBlank() },
+            directSongItem = this
+        )
+    }
+
     /**
      * Extracts and resolves a Spotify URL or URI from raw user input (including share text or short links).
      */
@@ -109,11 +541,13 @@ object SpotifyPlaylistImporter {
         try {
             val trimmed = rawInput.trim()
             if (trimmed.isEmpty()) {
-                return@withContext Result.failure(IllegalArgumentException("Masukkan URL Spotify terlebih dahulu"))
+                return@withContext Result.failure(
+                    IllegalArgumentException("Masukkan link Spotify atau YouTube Music terlebih dahulu")
+                )
             }
 
-            // 1. Check direct spotify:playlist:ID URI
-            val uriRegex = Regex("""spotify:(playlist|album|track):([a-zA-Z0-9]{22})""", RegexOption.IGNORE_CASE)
+            // 1. Check direct spotify:(playlist|album|track|artist):ID URI
+            val uriRegex = Regex("""spotify:(playlist|album|track|artist):([a-zA-Z0-9]{22})""", RegexOption.IGNORE_CASE)
             uriRegex.find(trimmed)?.let { match ->
                 val typeStr = match.groupValues[1].lowercase()
                 val id = match.groupValues[2]
@@ -147,14 +581,16 @@ object SpotifyPlaylistImporter {
                 }
             }
 
-            // 4. Match open.spotify.com/(intl-xx/)?(embed/)?(user/xxx/)?(playlist|album|track)/{id}
+            // 4. Match open.spotify.com/(intl-xx/)?(embed/)?(user/xxx/)?(playlist|album|track|artist)/{id}
             val webRegex = Regex(
-                """spotify\.com/(?:intl-[a-zA-Z-]+/)?(?:embed/)?(?:user/[^/]+/)?(playlist|album|track)/([a-zA-Z0-9]{15,30})""",
+                """spotify\.com/(?:intl-[a-zA-Z-]+/)?(?:embed/)?(?:user/[^/]+/)?(playlist|album|track|artist)/([a-zA-Z0-9]{15,30})""",
                 RegexOption.IGNORE_CASE
             )
             val webMatch = webRegex.find(candidateUrl)
                 ?: return@withContext Result.failure(
-                    IllegalArgumentException("Format URL Spotify tidak valid. Gunakan link Playlist, Album, atau Lagu dari Spotify.")
+                    IllegalArgumentException(
+                        "Format URL tidak valid. Gunakan link Playlist, Album, Lagu, atau Artis dari Spotify atau YouTube Music."
+                    )
                 )
 
             val type = parseType(webMatch.groupValues[1].lowercase())
@@ -175,6 +611,7 @@ object SpotifyPlaylistImporter {
     private fun parseType(typeStr: String): SpotifyResourceType = when (typeStr) {
         "album" -> SpotifyResourceType.ALBUM
         "track" -> SpotifyResourceType.TRACK
+        "artist" -> SpotifyResourceType.ARTIST
         else -> SpotifyResourceType.PLAYLIST
     }
 
@@ -197,7 +634,7 @@ object SpotifyPlaylistImporter {
     /**
      * Fetches playlist/album/track metadata and tracklist from Spotify without requiring user login.
      */
-    suspend fun fetchSpotifyPlaylist(rawUrl: String): Result<SpotifyPlaylistData> = withContext(Dispatchers.IO) {
+    private suspend fun fetchSpotifyOnlyPlaylist(rawUrl: String): Result<SpotifyPlaylistData> = withContext(Dispatchers.IO) {
         val parsed = parseAndResolveSpotifyUrl(rawUrl).getOrElse { return@withContext Result.failure(it) }
 
         try {
@@ -233,7 +670,8 @@ object SpotifyPlaylistImporter {
             Result.success(
                 primaryData.copy(
                     name = decodeHtmlEntities(finalName),
-                    coverArtUrl = finalCover
+                    coverArtUrl = finalCover,
+                    platform = ImportSourcePlatform.SPOTIFY
                 )
             )
         } catch (e: CancellationException) {
@@ -330,7 +768,9 @@ object SpotifyPlaylistImporter {
                         val trackTitle = item.optString("title").ifBlank { item.optString("name") }.trim()
                         if (trackTitle.isEmpty()) continue
                         val rawSubtitle = item.optString("subtitle").trim()
-                        val artist = cleanArtistString(rawSubtitle)
+                        val artist = cleanArtistString(rawSubtitle).ifBlank {
+                            if (parsed.type == SpotifyResourceType.ARTIST) decodeHtmlEntities(title) else ""
+                        }
                         val duration = item.optLong("duration", 0L)
                         val uri = item.optString("uri", "")
                         val trackId = uri.substringAfterLast(":").ifBlank { "${parsed.id}_$i" }
@@ -462,6 +902,34 @@ object SpotifyPlaylistImporter {
                         subtitle = trackInfo.artist,
                         coverArtUrl = trackInfo.thumbnailUrl,
                         tracks = listOf(trackInfo)
+                    )
+                }
+
+                SpotifyResourceType.ARTIST -> {
+                    val artistUrl = "https://api.spotify.com/v1/artists/${parsed.id}"
+                    val artistJson = getJsonWithBearer(artistUrl, token)
+                    val artistName = artistJson?.optString("name")?.takeIf { it.isNotBlank() } ?: "Spotify Artist"
+                    val coverUrl = artistJson?.optJSONArray("images")?.optJSONObject(0)?.optString("url")
+
+                    val topTracksUrl = "https://api.spotify.com/v1/artists/${parsed.id}/top-tracks?market=ID"
+                    val topTracksJson = getJsonWithBearer(topTracksUrl, token) ?: return null
+                    val items = topTracksJson.optJSONArray("tracks") ?: return null
+
+                    val tracks = mutableListOf<SpotifyTrackInfo>()
+                    for (i in 0 until items.length()) {
+                        val track = items.optJSONObject(i) ?: continue
+                        parseWebApiTrackObject(track, defaultArtist = artistName, fallbackCover = coverUrl)?.let {
+                            tracks.add(it)
+                        }
+                    }
+                    if (tracks.isEmpty()) return null
+                    SpotifyPlaylistData(
+                        id = parsed.id,
+                        type = parsed.type,
+                        name = artistName,
+                        subtitle = "Top Tracks • $artistName",
+                        coverArtUrl = coverUrl,
+                        tracks = tracks
                     )
                 }
             }
@@ -635,8 +1103,9 @@ object SpotifyPlaylistImporter {
     }
 
     /**
-     * Imports the selected Spotify tracks into NanzBeatles MusicDatabase by matching each song
-     * on YouTube Music (`YouTube.search`) and creating/updating the target playlist.
+     * Imports the selected Spotify or YouTube Music tracks into NanzBeatles MusicDatabase.
+     * For YouTube Music tracks (`directSongItem != null`), inserts directly without needing search.
+     * For Spotify tracks, matches each song on YouTube Music (`YouTube.search`).
      */
     suspend fun importTracksToDatabase(
         database: MusicDatabase,
@@ -651,7 +1120,7 @@ object SpotifyPlaylistImporter {
                 return@withContext Result.failure(IllegalArgumentException("Tidak ada lagu yang dipilih untuk diimport"))
             }
 
-            val finalPlaylistName = playlistName.trim().ifEmpty { "Spotify Playlist" }
+            val finalPlaylistName = playlistName.trim().ifEmpty { "Imported Playlist" }
             val targetPlaylistId = existingPlaylistId ?: PlaylistEntity.generatePlaylistId()
 
             if (existingPlaylistId == null) {
@@ -683,7 +1152,7 @@ object SpotifyPlaylistImporter {
                 tracks.mapIndexed { index, track ->
                     async(Dispatchers.IO) {
                         semaphore.withPermit {
-                            val matched = searchBestYouTubeMatch(track)
+                            val matched = track.directSongItem ?: searchBestYouTubeMatch(track)
                             val done = processedAtomic.incrementAndGet()
                             val okCount = if (matched != null) {
                                 matchedAtomic.incrementAndGet()
@@ -716,7 +1185,7 @@ object SpotifyPlaylistImporter {
                 }.awaitAll()
             }
 
-            // Preserve the exact Spotify playlist order when inserting into playlist_song_map
+            // Preserve the exact playlist order when inserting into playlist_song_map
             val orderedResults = matchResults.sortedBy { it.index }
             val matchedSongIds = orderedResults.mapNotNull { it.matchedSong?.id }
             val failedTracks = orderedResults.filter { it.matchedSong == null }.map { it.track }
@@ -747,7 +1216,7 @@ object SpotifyPlaylistImporter {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Timber.tag(TAG).e(e, "Failed during Spotify playlist import")
+            Timber.tag(TAG).e(e, "Failed during playlist import")
             Result.failure(e)
         }
     }
@@ -789,6 +1258,31 @@ object SpotifyPlaylistImporter {
         }
 
         return null
+    }
+
+    /**
+     * Resolves a single SpotifyTrackInfo to a playable YouTube Music SongItem.
+     */
+    suspend fun resolveSingleTrack(track: SpotifyTrackInfo): SongItem? = withContext(Dispatchers.IO) {
+        track.directSongItem ?: searchBestYouTubeMatch(track)
+    }
+
+    /**
+     * Resolves a YouTube Music Artist browseId (e.g. "UC...") for a Spotify or YouTube Music artist data.
+     */
+    suspend fun resolveArtistBrowseId(data: SpotifyPlaylistData): String? = withContext(Dispatchers.IO) {
+        if (data.platform == ImportSourcePlatform.YOUTUBE_MUSIC && data.id.startsWith("UC")) {
+            return@withContext data.id
+        }
+        val query = data.name.trim()
+        if (query.isEmpty()) return@withContext null
+        val artists = YouTube.search(query, YouTube.SearchFilter.FILTER_ARTIST)
+            .getOrNull()
+            ?.items
+            ?.filterIsInstance<ArtistItem>()
+            .orEmpty()
+        artists.firstOrNull { it.title.equals(query, ignoreCase = true) }?.id
+            ?: artists.firstOrNull()?.id
     }
 
     private fun pickBestSongCandidate(candidates: List<SongItem>, target: SpotifyTrackInfo): SongItem {

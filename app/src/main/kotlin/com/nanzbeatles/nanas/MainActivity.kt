@@ -264,6 +264,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var navController: NavHostController
     private var pendingIntent: Intent? = null
     private var latestVersionName by mutableStateOf(BuildConfig.VERSION_NAME)
+    private var sharedImportUrl by mutableStateOf<String?>(null)
 
     private var playerConnection by mutableStateOf<PlayerConnection?>(null)
 
@@ -582,10 +583,15 @@ class MainActivity : ComponentActivity() {
             com.nanzbeatles.nanas.constants.AppVisualStyleKey,
             defaultValue = com.nanzbeatles.nanas.constants.AppVisualStyle.LIQUID_GLASS
         )
+        val (softLightMode, _) = rememberPreference(
+            com.nanzbeatles.nanas.constants.SoftLightModeKey,
+            defaultValue = true
+        )
 
         AuraMusicTheme(
             darkTheme = useDarkTheme,
             pureBlack = pureBlack,
+            softLight = softLightMode,
             themeColor = themeColor,
             selectedFont = selectedFont,
             fontScale = fontScale,
@@ -610,6 +616,7 @@ class MainActivity : ComponentActivity() {
 
                 val navController = rememberNavController()
                 DisposableEffect(navController) {
+                    this@MainActivity.navController = navController
                     com.nanzbeatles.nanas.poster.PosterSession.navigateCallback = {
                         navController.navigate("poster")
                     }
@@ -1532,6 +1539,30 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
+                    sharedImportUrl?.let { importUrl ->
+                        com.nanzbeatles.nanas.ui.component.SpotifyImportDialog(
+                            initialUrl = importUrl,
+                            onDismiss = { sharedImportUrl = null },
+                            onPlaylistImported = { newPlaylistId ->
+                                sharedImportUrl = null
+                                navController.navigate("local_playlist/$newPlaylistId")
+                            },
+                            onPlaySong = { matchedSong ->
+                                sharedImportUrl = null
+                                playerConnection?.playQueue(
+                                    YouTubeQueue(
+                                        WatchEndpoint(videoId = matchedSong.id),
+                                        matchedSong.toMediaMetadata()
+                                    )
+                                )
+                            },
+                            onOpenArtist = { artistBrowseId ->
+                                sharedImportUrl = null
+                                navController.navigate("artist/$artistBrowseId")
+                            }
+                        )
+                    }
+
                     // Global Spotify Dynamic Island overlay (opt-in, disabled by default)
                     com.nanzbeatles.nanas.ui.component.DynamicIslandOverlay(
                         isPlayerExpanded = playerBottomSheetState.isExpanded,
@@ -1555,9 +1586,28 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        val uri = intent.data ?: intent.extras?.getString(Intent.EXTRA_TEXT)?.toUri() ?: return
+        val isSendAction = intent.action == Intent.ACTION_SEND
+        val rawSharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
+            ?: intent.clipData?.getItemAt(0)?.text?.toString()
+        val rawTarget = intent.dataString ?: rawSharedText ?: return
+
         intent.data = null
         intent.removeExtra(Intent.EXTRA_TEXT)
+        if (isSendAction) {
+            intent.action = null
+        }
+
+        // Extract clean URL if user shared descriptive text containing a link (e.g. from Spotify or YT Music share sheet)
+        val extractedSupportedUrl = com.nanzbeatles.nanas.utils.SpotifyPlaylistImporter.extractSupportedUrl(rawTarget)
+        val effectiveUrlString = extractedSupportedUrl ?: rawTarget.trim()
+
+        // 1. If it's a Spotify link (playlist, album, track, or artist), open the Import / Action Dialog directly
+        if (com.nanzbeatles.nanas.utils.SpotifyPlaylistImporter.isSpotifyUrl(effectiveUrlString)) {
+            sharedImportUrl = effectiveUrlString
+            return
+        }
+
+        val uri = effectiveUrlString.toUri()
         val coroutineScope = lifecycle.coroutineScope
 
         val listenCode = uri.getQueryParameter("code")
@@ -1570,7 +1620,22 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        when (val path = uri.pathSegments.firstOrNull()) {
+        // 2. If user explicitly shared a YouTube Music / YouTube Playlist or Album via Share Sheet (ACTION_SEND),
+        // open the Import Playlist Dialog so they can import it directly into their local library.
+        val firstSegment = uri.pathSegments.firstOrNull()
+        val listQueryParam = uri.getQueryParameter("list")
+        val videoQueryParam = uri.getQueryParameter("v")
+        val isSharedYtPlaylistOrAlbum = isSendAction && (
+            firstSegment == "playlist" ||
+                (firstSegment == "browse" && (uri.lastPathSegment?.startsWith("VL") == true || uri.lastPathSegment?.startsWith("MPREb_") == true)) ||
+                (!listQueryParam.isNullOrBlank() && videoQueryParam.isNullOrBlank())
+            )
+        if (isSharedYtPlaylistOrAlbum && com.nanzbeatles.nanas.utils.SpotifyPlaylistImporter.isSupportedImportUrl(effectiveUrlString)) {
+            sharedImportUrl = effectiveUrlString
+            return
+        }
+
+        when (val path = firstSegment) {
             "playlist" -> uri.getQueryParameter("list")?.let { playlistId ->
                 if (playlistId.startsWith("OLAK5uy_")) {
                     coroutineScope.launch(Dispatchers.IO) {
@@ -1588,10 +1653,20 @@ class MainActivity : ComponentActivity() {
             }
 
             "browse" -> uri.lastPathSegment?.let { browseId ->
-                navController.navigate("album/$browseId")
+                when {
+                    browseId.startsWith("VL") -> {
+                        navController.navigate("online_playlist/${browseId.removePrefix("VL")}")
+                    }
+                    browseId.startsWith("UC") -> {
+                        navController.navigate("artist/$browseId")
+                    }
+                    else -> {
+                        navController.navigate("album/$browseId")
+                    }
+                }
             }
 
-            "channel", "c" -> uri.lastPathSegment?.let { artistId ->
+            "channel", "c", "user" -> uri.lastPathSegment?.let { artistId ->
                 navController.navigate("artist/$artistId")
             }
 

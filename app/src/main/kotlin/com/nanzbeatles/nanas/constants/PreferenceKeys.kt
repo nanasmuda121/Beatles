@@ -20,10 +20,11 @@ val SelectedFontKey = stringPreferencesKey("selectedFont")
 val FontScaleKey = floatPreferencesKey("fontScale")
 val FontBoldnessKey = floatPreferencesKey("fontBoldness")
 val DarkModeKey = stringPreferencesKey("darkMode")
+val SoftLightModeKey = booleanPreferencesKey("softLightMode")
 val AppVisualStyleKey = stringPreferencesKey("appVisualStyle")
 
 enum class AppVisualStyle(val title: String, val subtitle: String) {
-    LIQUID_GLASS("Liquid Glass", "3D Bening & Lensa Air"),
+    LIQUID_GLASS("Liquid Glass", "Glass Ringan & Bening"),
     EDITORIAL("Editorial", "Tipografi Majalah & Garis Tegas"),
 }
 

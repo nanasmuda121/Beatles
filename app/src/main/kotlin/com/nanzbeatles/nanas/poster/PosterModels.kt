@@ -21,10 +21,14 @@ enum class PosterStep { MODE, SONGS, PHOTOS, CUTOUT, BACKGROUND, EDITOR }
 enum class PosterMode { COLLAGE, PHOTO3D }
 
 enum class PosterAspect(val label: String, val ratio: Float) {
+    ORIGINAL("Asli Foto", 9f / 16f),
     STORY("9:16", 9f / 16f),
-    COLLAGE("Poster", 1080f / 1526f),
+    RATIO_3_4("3:4", 3f / 4f),
     PORTRAIT("4:5", 4f / 5f),
+    COLLAGE("Poster", 1080f / 1526f),
     SQUARE("1:1", 1f),
+    LANDSCAPE_4_3("4:3", 4f / 3f),
+    WIDE_16_9("16:9", 16f / 9f),
 }
 
 enum class BackgroundMode { PHOTO, SOLID, GRADIENT }
@@ -140,9 +144,9 @@ data class PosterElement(
     val rotY: Float = 0f,
     /** Posisi kilau kartu Mode 2: 0 = kanan-atas, 1 = kiri-atas, 2 = kanan-atas + kanan-bawah. */
     val sparkleStyle: Int = 0,
-    /** Elemen dengan group sama bergerak bersama (foto + cutout dirinya di Mode 2). */
+    /** Elemen dengan group sama bergerak bersama (null = bergerak terpisah secara independen). */
     val group: String? = null,
-    /** true = elemen menutupi seluruh poster (crop), dipakai foto utama dan cutout-nya di Mode 2. */
+    /** true = elemen menutupi seluruh poster (crop). */
     val fill: Boolean = false,
 )
 
@@ -150,9 +154,9 @@ object PosterMetrics {
     const val CARD_W = 0.63f          // Mode 1: lebar kartu = 63% lebar poster (sesuai referensi 680/1080)
     const val CARD_ASPECT = 0.66f     // Mode 1: tinggi kartu = 66% lebar kartu (sesuai referensi 460/680)
     const val CUTOUT_H = 0.45f        // Mode 1: tinggi dasar cutout
-    const val V_CARD_W = 0.44f        // Mode 2: kartu vertikal, lebar 44% lebar poster (sesuai beatles_player_card.jpg)
-    const val V_CARD_ASPECT = 1.45f   // Mode 2: tinggi kartu = 1.45 x lebar kartu (sesuai beatles_player_card.jpg 1180/820)
-    const val MAX_V_SONGS = 4
+    const val V_CARD_W = 0.44f        // Mode 2: kartu vertikal, lebar 44% lebar poster (sesuai referensi)
+    const val V_CARD_ASPECT = 1.52f   // Mode 2: tinggi kartu = 1.52 x lebar kartu agar kontrol pause/prev/next & volume utuh
+    const val MAX_V_SONGS = Int.MAX_VALUE
     const val MAX_PHOTOS = 3
     const val MAX_BACKGROUNDS = 3
     const val SONG_COUNT = 3
@@ -164,8 +168,12 @@ class PhotoSlot(val id: String, val uri: android.net.Uri) {
     var original: Bitmap? = null
     var editor by mutableStateOf<CutoutEditor?>(null)
     var keepOriginal by mutableStateOf(false)
-    /** Hasil akhir yang dipakai di poster (sudah dipangkas). */
+    /** Hasil akhir cutout karakter yang sudah dipangkas rapat ke batas karakter. */
     var finalBitmap: Bitmap? = null
+    /** Background bersih yang sudah dihapus karakternya (inpainted) agar background & karakter benar-benar terpisah. */
+    var cleanBackground: Bitmap? = null
+    /** Bounds karakter relatif terhadap foto asli: [cxFrac, cyFrac, wFrac, hFrac]. */
+    var cutoutBoundsInOriginal: FloatArray? = null
 }
 
 val CARD_COLOR_PRESETS: List<Int> = listOf(

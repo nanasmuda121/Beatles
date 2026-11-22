@@ -3,16 +3,15 @@
  *
  * Mesin penghapus background presisi tinggi untuk fitur Poster Musik Favorit.
  *
- * Alur:
+ * Alur Utama:
  * 1. Decode foto (EXIF + sampling)
- * 2. Segmentasi 2-Tahap Coarse-to-Fine ROI (ML Kit Selfie Segmentation):
- *    - Tahap 1 mendeteksi area subjek manusia utama & mengisolasi objek latar sekitar.
- *    - Tahap 2 memotong ROI karakter utama dan menjalankan ulang neural network pada resolusi penuh
- *      khusus di area karakter sehingga detail tangan, rambut, dan pakaian 2-4x lebih tajam.
- * 3. Pemisahan Afinitas Warna Lokal (Local Foreground vs Background Color Model):
- *    - Membandingkan warna RGB/perseptual piksel di zona transisi terhadap warna subjek vs warna objek sekitar.
- *    - Mencegah bagian tubuh/baju karakter ikut terhapus sekaligus membuang objek sekitar yang menempel.
- * 4. Multi-channel RGB Guided Filter + Morphological Closing + Hole Filling + Defringe.
+ * 2. iLoveIMG Cloud AI Background Remover (https://www.iloveimg.com/remove-background — tanpa API key):
+ *    - Mengambil token & taskId sesi otomatis dari halaman web iLoveIMG
+ *    - Upload foto ke endpoint `/v1/upload` dan memproses di `/v1/removebackground`
+ *    - Menghasilkan cutout PNG transparan presisi tinggi (rambut, jari, pakaian, aksesori).
+ * 3. Fallback Offline On-Device (jika perangkat sedang tidak ada sinyal internet):
+ *    - Segmentasi 2-Tahap Coarse-to-Fine ROI (ML Kit Selfie Segmentation)
+ *    - Local Foreground vs Background Color Model + Multi-channel RGB Guided Filter + Defringe.
  */
 
 package com.nanzbeatles.nanas.poster
@@ -30,8 +29,17 @@ import com.google.mlkit.vision.segmentation.selfie.SelfieSegmenterOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
+import timber.log.Timber
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.ByteOrder
+import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.math.abs
@@ -120,28 +128,202 @@ object PosterImageLoader {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Segmentasi 2-Tahap (Coarse-to-Fine ROI)
+// iLoveIMG Cloud Background Remover (Keyless) + On-Device Fallback
 // ---------------------------------------------------------------------------------------------
 
 interface BackgroundRemover {
-    /** Mengembalikan confidence "orang" per piksel, ukuran sama dengan [bitmap] (w*h). */
+    /**
+     * Jika remover menghasilkan bitmap RGBA langsung dari cloud (mis. iLoveIMG),
+     * kembalikan Bitmap ARGB_8888 berukuran sama dengan [bitmap]. Jika null, pakai [confidence].
+     */
+    suspend fun removeBackgroundDirect(bitmap: Bitmap): Bitmap? = null
+
+    /** Mengembalikan confidence "subjek" per piksel (0..1), ukuran sama dengan [bitmap] (w*h). */
     suspend fun confidence(bitmap: Bitmap): FloatArray
     fun close() {}
 }
 
 /**
- * ML Kit Selfie Segmentation dengan peningkatan Coarse-to-Fine 2-Tahap:
- * - Tahap 1: deteksi posisi karakter utama pada foto penuh dan buang pulau objek di pinggir.
- * - Tahap 2: crop khusus di sekitar karakter utama lalu jalankan segmentasi kedua sehingga
- *   grid tensor 256x256 ML Kit terkonsentrasi penuh pada tubuh/tangan/kepala karakter.
+ * Klien tanpa API key ke https://www.iloveimg.com/remove-background.
+ * Mengambil token JWT publik & taskId secara dinamis, mengunggah gambar, dan mengunduh PNG hasil cutout.
  */
-class MlKitSelfieRemover : BackgroundRemover {
+object ILoveImgClient {
+    private const val PAGE_URL = "https://www.iloveimg.com/remove-background"
+    private const val USER_AGENT =
+        "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
+
+    private val httpClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(25, TimeUnit.SECONDS)
+            .readTimeout(45, TimeUnit.SECONDS)
+            .writeTimeout(45, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .build()
+    }
+
+    private val tokenRegex = Regex(""""token"\s*:\s*"([^"]+)"""")
+    private val taskIdRegex = Regex("""ilovepdfConfig\.taskId\s*=\s*['"]([^'"]+)['"]""")
+    private val serversRegex = Regex(""""servers"\s*:\s*\[([^\]]+)]""")
+
+    private data class SessionConfig(
+        val token: String,
+        val taskId: String,
+        val servers: List<String>,
+    )
+
+    private fun fetchSession(): SessionConfig {
+        val req = Request.Builder()
+            .url(PAGE_URL)
+            .header("User-Agent", USER_AGENT)
+            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            .get()
+            .build()
+
+        httpClient.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                throw IllegalStateException("iLoveIMG page HTTP ${resp.code}")
+            }
+            val html = resp.body?.string().orEmpty()
+            val token = tokenRegex.find(html)?.groupValues?.getOrNull(1)
+                ?: throw IllegalStateException("Token iLoveIMG tidak ditemukan")
+            val taskId = taskIdRegex.find(html)?.groupValues?.getOrNull(1)
+                ?: throw IllegalStateException("TaskId iLoveIMG tidak ditemukan")
+            val serversRaw = serversRegex.find(html)?.groupValues?.getOrNull(1).orEmpty()
+            val servers = Regex(""""([^"]+)"""").findAll(serversRaw)
+                .map { it.groupValues[1] }
+                .filter { it.isNotBlank() }
+                .toList()
+                .ifEmpty { listOf("api4g", "api5g", "api6g", "api1g") }
+
+            return SessionConfig(token = token, taskId = taskId, servers = servers)
+        }
+    }
+
+    /**
+     * Menghapus background menggunakan iLoveIMG dan mengembalikan Bitmap ARGB_8888
+     * dengan ukuran persis [source.width] x [source.height].
+     */
+    suspend fun removeBackground(source: Bitmap): Bitmap? = withContext(Dispatchers.IO) {
+        try {
+            val session = fetchSession()
+            val jpegBytes = ByteArrayOutputStream().use { bos ->
+                source.compress(Bitmap.CompressFormat.JPEG, 94, bos)
+                bos.toByteArray()
+            }
+
+            var lastError: Throwable? = null
+            for (server in session.servers.take(3)) {
+                try {
+                    val baseUrl = "https://$server.iloveimg.com"
+
+                    // 1. Upload file ke /v1/upload
+                    val uploadBody = MultipartBody.Builder()
+                        .setType(MultipartBody.FORM)
+                        .addFormDataPart("task", session.taskId)
+                        .addFormDataPart("v", "web.0")
+                        .addFormDataPart(
+                            "file",
+                            "photo.jpg",
+                            jpegBytes.toRequestBody("image/jpeg".toMediaType())
+                        )
+                        .build()
+
+                    val uploadReq = Request.Builder()
+                        .url("$baseUrl/v1/upload")
+                        .header("User-Agent", USER_AGENT)
+                        .header("Authorization", "Bearer ${session.token}")
+                        .header("Origin", "https://www.iloveimg.com")
+                        .header("Referer", PAGE_URL)
+                        .post(uploadBody)
+                        .build()
+
+                    val serverFilename = httpClient.newCall(uploadReq).execute().use { resp ->
+                        if (!resp.isSuccessful) {
+                            throw IllegalStateException("Upload gagal HTTP ${resp.code}")
+                        }
+                        val bodyStr = resp.body?.string().orEmpty()
+                        JSONObject(bodyStr).optString("server_filename", "")
+                    }
+                    if (serverFilename.isBlank()) {
+                        throw IllegalStateException("server_filename kosong dari iLoveIMG")
+                    }
+
+                    // 2. Proses hapus background di /v1/removebackground
+                    val processBody = MultipartBody.Builder()
+                        .setType(MultipartBody.FORM)
+                        .addFormDataPart("task", session.taskId)
+                        .addFormDataPart("server_filename", serverFilename)
+                        .build()
+
+                    val processReq = Request.Builder()
+                        .url("$baseUrl/v1/removebackground")
+                        .header("User-Agent", USER_AGENT)
+                        .header("Authorization", "Bearer ${session.token}")
+                        .header("Origin", "https://www.iloveimg.com")
+                        .header("Referer", PAGE_URL)
+                        .post(processBody)
+                        .build()
+
+                    val pngBytes = httpClient.newCall(processReq).execute().use { resp ->
+                        if (!resp.isSuccessful) {
+                            throw IllegalStateException("RemoveBackground gagal HTTP ${resp.code}")
+                        }
+                        resp.body?.bytes() ?: throw IllegalStateException("Body hasil kosong")
+                    }
+
+                    val opts = BitmapFactory.Options().apply {
+                        inPreferredConfig = Bitmap.Config.ARGB_8888
+                    }
+                    var decoded = BitmapFactory.decodeByteArray(pngBytes, 0, pngBytes.size, opts)
+                        ?: throw IllegalStateException("Gagal decode PNG hasil iLoveIMG")
+
+                    if (decoded.width != source.width || decoded.height != source.height) {
+                        val scaled = Bitmap.createScaledBitmap(decoded, source.width, source.height, true)
+                        if (scaled !== decoded) decoded.recycle()
+                        decoded = scaled
+                    }
+                    if (decoded.config != Bitmap.Config.ARGB_8888) {
+                        val copy = decoded.copy(Bitmap.Config.ARGB_8888, false)
+                        if (copy != null) {
+                            decoded.recycle()
+                            decoded = copy
+                        }
+                    }
+                    Timber.d("iLoveIMG background removal berhasil (${decoded.width}x${decoded.height})")
+                    return@withContext decoded
+                } catch (e: Throwable) {
+                    lastError = e
+                    Timber.w(e, "iLoveIMG gagal di server $server, mencoba server berikutnya...")
+                }
+            }
+            if (lastError != null) {
+                Timber.w(lastError, "Semua server iLoveIMG gagal, beralih ke fallback on-device")
+            }
+            null
+        } catch (e: Throwable) {
+            Timber.w(e, "iLoveIMG tidak dapat diakses, beralih ke fallback on-device")
+            null
+        }
+    }
+}
+
+/**
+ * Remover Hybrid:
+ * 1. Mengutamakan iLoveIMG Cloud AI (`https://www.iloveimg.com/remove-background`) tanpa API key.
+ * 2. Jika offline / gagal jaringan, otomatis fallback ke ML Kit 2-Stage Coarse-to-Fine + Color Affinity.
+ */
+class HybridBackgroundRemover : BackgroundRemover {
     private val segmenter by lazy {
         Segmentation.getClient(
             SelfieSegmenterOptions.Builder()
                 .setDetectorMode(SelfieSegmenterOptions.SINGLE_IMAGE_MODE)
                 .build()
         )
+    }
+
+    override suspend fun removeBackgroundDirect(bitmap: Bitmap): Bitmap? {
+        return ILoveImgClient.removeBackground(bitmap)
     }
 
     private suspend fun runRawMask(bmp: Bitmap): FloatArray {
@@ -153,8 +335,6 @@ class MlKitSelfieRemover : BackgroundRemover {
         return withContext(Dispatchers.Default) {
             val mw = mask.width
             val mh = mask.height
-            // PENTING: buffer TensorFlow Lite ML Kit berada dalam format Native Byte Order (Little Endian).
-            // Harus diset nativeOrder() sebelum dibaca agar confidence tidak bernilai 0 / negatif!
             val buf = mask.buffer.order(ByteOrder.nativeOrder())
             buf.rewind()
             val floatBuf = buf.asFloatBuffer()
@@ -179,13 +359,44 @@ class MlKitSelfieRemover : BackgroundRemover {
             if (c > maxConf) maxConf = c
         }
 
-        // Jika model neural network mendeteksi subjek (confidence >= 0.22)
         if (maxConf >= 0.22f) {
+            // Tahap 2: Coarse-to-Fine ROI crop agar resolusi ML Kit fokus di sekitar subjek utama
+            val roi = withContext(Dispatchers.Default) {
+                MaskRefiner.findMainSubjectBox(pass1, w, h)
+            }
+            if (roi != null) {
+                val rx0 = roi[0]
+                val ry0 = roi[1]
+                val rx1 = roi[2]
+                val ry1 = roi[3]
+                val rw = rx1 - rx0 + 1
+                val rh = ry1 - ry0 + 1
+                if (rw in 64 until (w * 0.92f).toInt() || rh in 64 until (h * 0.92f).toInt()) {
+                    try {
+                        val cropBmp = Bitmap.createBitmap(bitmap, rx0, ry0, rw, rh)
+                        val cropConf = runRawMask(cropBmp)
+                        if (cropBmp !== bitmap) cropBmp.recycle()
+                        val merged = FloatArray(w * h)
+                        for (y in 0 until rh) {
+                            val dy = ry0 + y
+                            val srcRow = y * rw
+                            val dstRow = dy * w
+                            for (x in 0 until rw) {
+                                val dx = rx0 + x
+                                val c1 = pass1[dstRow + dx]
+                                val c2 = cropConf[srcRow + x]
+                                merged[dstRow + dx] = 0.72f * c2 + 0.28f * c1
+                            }
+                        }
+                        return merged
+                    } catch (_: Throwable) {
+                        return pass1
+                    }
+                }
+            }
             return pass1
         }
 
-        // Fallback: Segmentasi berbasis kontras warna latar belakang sudut jika ML Kit tidak mendeteksi manusia
-        // (misal gambar kartun/anime, stiker, atau latar studio)
         return withContext(Dispatchers.Default) {
             MaskRefiner.fallbackColorSegmentation(bitmap)
         }
@@ -232,8 +443,7 @@ object MaskRefiner {
     }
 
     /**
-     * Fallback cerdas pemisahan background berbasis analisis warna latar sudut gambar:
-     * Digunakan jika foto bukan selfie manusia (misal: stiker anime, kartun, objek/cover, atau foto gelap).
+     * Fallback cerdas pemisahan background berbasis analisis warna latar tepi & sudut gambar.
      */
     fun fallbackColorSegmentation(bitmap: Bitmap): FloatArray {
         val w = bitmap.width
@@ -325,7 +535,6 @@ object MaskRefiner {
 
     /**
      * Cari bounding box karakter manusia utama dari confidence pass-1, mengabaikan objek terpisah di pinggir.
-     * Return [x0, y0, x1, y1] dengan margin ~14%.
      */
     fun findMainSubjectBox(conf: FloatArray, w: Int, h: Int): IntArray? {
         val n = w * h
@@ -335,7 +544,6 @@ object MaskRefiner {
 
         var bestLabel = 0
         var bestScore = -1f
-        // Hitung pusat massa dan skor tiap komponen (ukuran * bobot sentralitas)
         val sumX = FloatArray(comp.sizes.size)
         val sumY = FloatArray(comp.sizes.size)
         val sumConf = FloatArray(comp.sizes.size)
@@ -352,7 +560,6 @@ object MaskRefiner {
             if (sz < n * 0.005f) continue
             val cx = (sumX[l] / sz) / w
             val cy = (sumY[l] / sz) / h
-            // Karakter utama biasanya berada di area tengah horizontal/vertikal
             val distCenter = hypot((cx - 0.5f) * 1.1f, (cy - 0.52f) * 0.8f)
             val centerWeight = (1.15f - distCenter).coerceIn(0.35f, 1.15f)
             val meanC = sumConf[l] / sz
@@ -371,7 +578,6 @@ object MaskRefiner {
         val mainSize = comp.sizes[bestLabel]
         for (i in 0 until n) {
             val l = comp.labels[i]
-            // Sertakan komponen utama, atau komponen cukup besar (>2% utama, mis. tangan/kaki/pose) yang cukup yakin
             if (l == bestLabel || (l != 0 && comp.sizes[l] >= mainSize * 0.02f && sumConf[l] / comp.sizes[l] > 0.45f)) {
                 val x = i % w
                 val y = i / w
@@ -418,11 +624,6 @@ object MaskRefiner {
         return FloatArray(n) { (meanA[it] * guide[it] + meanB[it]).coerceIn(0f, 1f) }
     }
 
-    /**
-     * Multi-channel Color-Aware Guided Filter:
-     * Menggabungkan panduan dari Luminance (Y) dan Chrominance (R-G, B-Y) agar tepi mask
-     * memisahkan perbedaan warna antara karakter dan objek sekitar (walaupun tingkat terangnya mirip).
-     */
     private fun guidedFilterColor(
         rCh: FloatArray,
         gCh: FloatArray,
@@ -447,15 +648,6 @@ object MaskRefiner {
         }
     }
 
-    /**
-     * Pemisahan Afinitas Warna Lokal (Local Foreground vs Background Color Discrimination):
-     * - Di area transisi/ragu (0.10 < conf < 0.90), kita membandingkan warna piksel dengan
-     *   rata-rata warna Foreground yakin (conf >= 0.78) dan Background yakin (conf <= 0.16) di sekitarnya.
-     * - Jika piksel di sekitar tepi warnanya mirip objek background dan berbeda jauh dari warna
-     *   baju/kulit karakter, confidence-nya ditekan agar objek sekitar terhapus bersih.
-     * - Jika piksel di dalam/tepi tubuh warnanya sangat mirip dengan baju/kulit karakter yang yakin
-     *   di dekatnya, confidence-nya diangkat agar bagian tubuh/baju karakter tidak ikut terhapus.
-     */
     private fun applyLocalColorAffinity(
         rCh: FloatArray,
         gCh: FloatArray,
@@ -500,7 +692,6 @@ object MaskRefiner {
                 val pg = gCh[i]
                 val pb = bCh[i]
 
-                // Jarak warna perseptual (bobot R, G, B)
                 val dFg = sqrt(
                     2.1f * (pr - mFgR) * (pr - mFgR) +
                         4.0f * (pg - mFgG) * (pg - mFgG) +
@@ -511,7 +702,6 @@ object MaskRefiner {
                         4.0f * (pg - mBgG) * (pg - mBgG) +
                         1.9f * (pb - mBgB) * (pb - mBgB)
                 )
-                // Seberapa kontras warna FG dan BG di lokasi ini
                 val fgBgSep = sqrt(
                     2.1f * (mFgR - mBgR) * (mFgR - mBgR) +
                         4.0f * (mFgG - mBgG) * (mFgG - mBgG) +
@@ -523,13 +713,9 @@ object MaskRefiner {
                     val sepStrength = ((fgBgSep - 0.08f) / 0.35f).coerceIn(0f, 1f) * 0.35f
                     var adjusted = c * (1f - sepStrength) + colorAffinity * sepStrength
 
-                    // Jika piksel berada di dalam area dominan FG dan warnanya sangat dekat dengan FG,
-                    // lindungi supaya baju/tangan karakter tidak ikut terhapus.
                     if (c >= 0.30f && dFg < 0.18f && dBg > dFg * 1.4f) {
                         adjusted = max(adjusted, (c + 0.25f).coerceAtMost(0.98f))
                     }
-                    // Jika piksel berada di pinggir luar dan warnanya sangat mirip objek background,
-                    // tekan supaya objek sekitar karakter terhapus bersih (hanya jika confidence awal memang rendah).
                     if (c <= 0.40f && dBg < 0.12f && dFg > dBg * 1.80f) {
                         adjusted = min(adjusted, (c - 0.20f).coerceAtLeast(0.0f))
                     }
@@ -538,12 +724,10 @@ object MaskRefiner {
                     out[i] = c
                 }
             } else if (c in 0.30f..0.75f && fw > 0.25f && bw <= 0.015f) {
-                // Piksel berada di tengah-tengah tubuh karakter (dikelilingi FG, jauh dari BG)
                 val mFgR = fgR[i] / fw
                 val mFgG = fgG[i] / fw
                 val mFgB = fgB[i] / fw
                 val dFg = abs(rCh[i] - mFgR) + abs(gCh[i] - mFgG) + abs(bCh[i] - mFgB)
-                // Pulihkan bagian dalam tubuh/logo pakaian agar tidak bolong
                 out[i] = if (dFg < 0.45f) max(c, 0.85f) else max(c, 0.68f)
             } else {
                 out[i] = c
@@ -599,20 +783,12 @@ object MaskRefiner {
         return Components(labels, sizes.toIntArray(), border.toBooleanArray())
     }
 
-    /**
-     * Bersihkan objek sekitar yang terpisah dari karakter utama, pertahankan tangan/lengan yang
-     * tersambung jembatan tipis, dan tutup lubang di dalam tubuh/pakaian karakter.
-     */
     private fun cleanup(alpha: FloatArray, w: Int, h: Int) {
         val n = w * h
-
-        // 1. Gunakan threshold jembatan rendah (0.24f) agar tangan/jari yang terhubung pergelangan tipis
-        //    tetap dianggap satu kesatuan dengan tubuh karakter utama.
         val bridgeFg = BooleanArray(n) { alpha[it] > 0.24f }
         val bridgeComp = label(bridgeFg, w, h)
         if (bridgeComp.sizes.size <= 1) return
 
-        // Pilih komponen karakter utama (skor kombinasi luas area & sentralitas)
         val sumX = FloatArray(bridgeComp.sizes.size)
         val sumY = FloatArray(bridgeComp.sizes.size)
         val strongCount = IntArray(bridgeComp.sizes.size)
@@ -645,7 +821,6 @@ object MaskRefiner {
         val mainStrong = strongCount[mainLabel]
         val keepBridge = BooleanArray(bridgeComp.sizes.size)
         for (l in 1 until bridgeComp.sizes.size) {
-            // Simpan komponen karakter utama; buang pulau di luar kecuali tangan/kaki atau menyentuh tepi bawah/samping
             keepBridge[l] = (l == mainLabel) ||
                 (strongCount[l] >= mainStrong * 0.03f && strongCount[l].toFloat() / bridgeComp.sizes[l] > 0.40f) ||
                 (bridgeComp.touchesBorder[l] && strongCount[l] >= 40)
@@ -666,7 +841,6 @@ object MaskRefiner {
             }
         }
 
-        // 2. Pada threshold ketat (0.48f), buang serpihan/pulau kecil yang lepas dari tubuh
         val strictFg = BooleanArray(n) { alpha[it] > 0.48f }
         val strictComp = label(strictFg, w, h)
         var largestStrict = 0
@@ -681,7 +855,6 @@ object MaskRefiner {
             }
         }
 
-        // 3. Tutup lubang di dalam tubuh/pakaian karakter (hingga 10% luas gambar, mis. baju gelap, logo baju, sabuk, bayangan)
         val bg = BooleanArray(n) { alpha[it] <= 0.48f }
         val bgComp = label(bg, w, h)
         val maxHole = (n * 0.10f).toInt()
@@ -700,17 +873,12 @@ object MaskRefiner {
         val gCh = FloatArray(n) { ((pixels[it] shr 8) and 255) / 255f }
         val bCh = FloatArray(n) { (pixels[it] and 255) / 255f }
 
-        // 1. Koreksi confidence dengan afinitas warna lokal (FG vs BG)
         val colorAdjusted = applyLocalColorAffinity(rCh, gCh, bCh, confidence, w, h)
-
-        // 2. Kontraskan kurva awal sebelum guided filter (ambang 0.12f - 0.70f agar baju & anggota badan solid)
         val p = FloatArray(n) { smoothstep(0.12f, 0.70f, colorAdjusted[it]) }
 
-        // 3. Multi-channel Color Guided Filter agar tepi mengikuti batas warna asli
         val r = (max(w, h) / 210).coerceIn(3, 7)
         val q = guidedFilterColor(rCh, gCh, bCh, p, w, h, r, 6e-4f)
 
-        // 4. Bersihkan objek sekitar & tutup lubang di dalam tubuh karakter
         cleanup(q, w, h)
         return q
     }
@@ -745,6 +913,143 @@ object MaskRefiner {
         }
         return out
     }
+
+    /**
+     * Menghapus karakter dari foto background (inpainting) dengan melanjutkan tekstur/struktur
+     * latar kiri-kanan & atas-bawah secara mulus, sehingga saat karakter atau background digeser
+     * terpisah di Mode 2 tidak ada bayangan/duplikat karakter di background.
+     */
+    fun inpaintBackground(srcPixels: IntArray, alpha: FloatArray, w: Int, h: Int): Bitmap {
+        val n = w * h
+        val rawMask = FloatArray(n) { if (alpha[it] > 0.03f) 1f else 0f }
+        val dilateRad = (max(w, h) / 90).coerceIn(6, 14)
+        val dilated = boxFilter(rawMask, w, h, dilateRad)
+        val isHole = BooleanArray(n) { dilated[it] > 0.015f }
+        val blendW = boxFilter(FloatArray(n) { if (isHole[it]) 1f else 0f }, w, h, 4)
+
+        val filled = srcPixels.copyOf()
+
+        // 1. Inpaint horizontal per baris dengan mirror-continuation dari strip background kiri & kanan
+        val leftStrip = IntArray(w)
+        val rightStrip = IntArray(w)
+        for (y in 0 until h) {
+            val row = y * w
+            var x = 0
+            while (x < w) {
+                if (!isHole[row + x]) {
+                    x++
+                    continue
+                }
+                val x0 = x
+                while (x < w && isHole[row + x]) x++
+                val x1 = x - 1
+                val span = x1 - x0 + 1
+
+                var leftCount = 0
+                var lx = x0 - 1
+                while (lx >= 0 && leftCount < 140) {
+                    if (!isHole[row + lx]) {
+                        leftStrip[leftCount++] = srcPixels[row + lx]
+                    }
+                    lx--
+                }
+
+                var rightCount = 0
+                var rx = x1 + 1
+                while (rx < w && rightCount < 140) {
+                    if (!isHole[row + rx]) {
+                        rightStrip[rightCount++] = srcPixels[row + rx]
+                    }
+                    rx++
+                }
+
+                if (leftCount > 0 || rightCount > 0) {
+                    for (ix in x0..x1) {
+                        val dLeft = ix - x0
+                        val dRight = x1 - ix
+                        val cLeft = if (leftCount > 0) {
+                            val idx = if (leftCount == 1) 0 else {
+                                val period = (leftCount - 1) * 2
+                                val m = dLeft % period
+                                if (m < leftCount) m else period - m
+                            }
+                            leftStrip[idx]
+                        } else rightStrip[0]
+
+                        val cRight = if (rightCount > 0) {
+                            val idx = if (rightCount == 1) 0 else {
+                                val period = (rightCount - 1) * 2
+                                val m = dRight % period
+                                if (m < rightCount) m else period - m
+                            }
+                            rightStrip[idx]
+                        } else leftStrip[0]
+
+                        val t = when {
+                            leftCount == 0 -> 1f
+                            rightCount == 0 -> 0f
+                            else -> smoothstep(0f, 1f, (ix - x0 + 0.5f) / span.toFloat())
+                        }
+                        val lr = ((cLeft shr 16) and 255) * (1f - t) + ((cRight shr 16) and 255) * t
+                        val lg = ((cLeft shr 8) and 255) * (1f - t) + ((cRight shr 8) and 255) * t
+                        val lb = (cLeft and 255) * (1f - t) + (cRight and 255) * t
+                        filled[row + ix] = (0xFF shl 24) or
+                            (lr.toInt().coerceIn(0, 255) shl 16) or
+                            (lg.toInt().coerceIn(0, 255) shl 8) or
+                            lb.toInt().coerceIn(0, 255)
+                    }
+                }
+            }
+        }
+
+        // 2. Untuk baris yang seluruhnya tertutup karakter (mis. bagian bawah badan), lanjutkan secara vertikal dari atas/bawah
+        for (x in 0 until w) {
+            var lastValidColor = 0xFF181A20.toInt()
+            for (y in 0 until h) {
+                val idx = y * w + x
+                if (!isHole[idx]) {
+                    lastValidColor = srcPixels[idx]
+                } else if (filled[idx] == srcPixels[idx]) {
+                    filled[idx] = lastValidColor
+                }
+            }
+        }
+
+        // 3. Perhalus sambungan di dalam area inpaint sambil menjaga struktur vertikal/horizontal
+        val rArr = FloatArray(n) { ((filled[it] shr 16) and 255).toFloat() }
+        val gArr = FloatArray(n) { ((filled[it] shr 8) and 255).toFloat() }
+        val bArr = FloatArray(n) { (filled[it] and 255).toFloat() }
+
+        val smoothR = boxFilter(rArr, w, h, 3)
+        val smoothG = boxFilter(gArr, w, h, 3)
+        val smoothB = boxFilter(bArr, w, h, 3)
+
+        val out = IntArray(n)
+        for (i in 0 until n) {
+            val bw = blendW[i].coerceIn(0f, 1f)
+            if (bw <= 0.001f) {
+                out[i] = (0xFF shl 24) or (srcPixels[i] and 0xFFFFFF)
+            } else {
+                val orig = srcPixels[i]
+                val or0 = (orig shr 16) and 255
+                val og0 = (orig shr 8) and 255
+                val ob0 = orig and 255
+
+                val ir = 0.65f * rArr[i] + 0.35f * smoothR[i]
+                val ig = 0.65f * gArr[i] + 0.35f * smoothG[i]
+                val ib = 0.65f * bArr[i] + 0.35f * smoothB[i]
+
+                val fr = (or0 * (1f - bw) + ir * bw).toInt().coerceIn(0, 255)
+                val fg = (og0 * (1f - bw) + ig * bw).toInt().coerceIn(0, 255)
+                val fb = (ob0 * (1f - bw) + ib * bw).toInt().coerceIn(0, 255)
+                out[i] = (0xFF shl 24) or (fr shl 16) or (fg shl 8) or fb
+            }
+        }
+
+        val result = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        result.setPixels(out, 0, w, 0, 0, w, h)
+        return result
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -756,6 +1061,7 @@ class CutoutEditor private constructor(
     val height: Int,
     private val src: IntArray,
     private val base: FloatArray,
+    private val fromCloudMatte: Boolean = false,
 ) {
     /** Bitmap hasil (ARGB, transparan di background). Diubah in-place saat mengedit. */
     val bitmap: Bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
@@ -782,6 +1088,11 @@ class CutoutEditor private constructor(
     }
 
     private fun curve(b: Float): Float {
+        // Jika hasil langsung dari iLoveIMG cloud alpha matte dan slider belum digeser,
+        // gunakan alpha asli 1:1 supaya detail helai rambut tidak berubah.
+        if (fromCloudMatte && abs(edgeShift) < 0.005f && abs(softness - 0.20f) < 0.005f) {
+            return b.coerceIn(0f, 1f)
+        }
         val c = 0.47f - edgeShift
         val hw = 0.05f + 0.28f * softness
         return MaskRefiner.smoothstep(c - hw, c + hw, b)
@@ -881,7 +1192,13 @@ class CutoutEditor private constructor(
     }
 
     /** Hasil akhir yang dipangkas ke area subjek (alpha > ~2%). */
-    fun finalCropped(): Bitmap {
+    fun finalCropped(): Bitmap = finalCroppedWithBounds().first
+
+    /**
+     * Hasil akhir yang dipangkas rapat ke area karakter beserta koordinat relatifnya
+     * `[cxFrac, cyFrac, wFrac, hFrac]` di dalam foto asli.
+     */
+    fun finalCroppedWithBounds(): Pair<Bitmap, FloatArray> {
         var minX = width
         var minY = height
         var maxX = -1
@@ -896,21 +1213,76 @@ class CutoutEditor private constructor(
                 }
             }
         }
-        if (maxX < minX || maxY < minY) return bitmap.copy(Bitmap.Config.ARGB_8888, false)
+        if (maxX < minX || maxY < minY) {
+            return bitmap.copy(Bitmap.Config.ARGB_8888, false) to floatArrayOf(0.5f, 0.5f, 1f, 1f)
+        }
         val pad = 2
         val l = max(0, minX - pad)
         val t = max(0, minY - pad)
         val r = min(width - 1, maxX + pad)
         val b = min(height - 1, maxY + pad)
-        return Bitmap.createBitmap(bitmap, l, t, r - l + 1, b - t + 1)
+        val cw = r - l + 1
+        val ch = b - t + 1
+        val cropped = Bitmap.createBitmap(bitmap, l, t, cw, ch)
+        val bounds = floatArrayOf(
+            (l + r + 1) / (2f * width),
+            (t + b + 1) / (2f * height),
+            cw.toFloat() / width,
+            ch.toFloat() / height,
+        )
+        return cropped to bounds
+    }
+
+    /**
+     * Menghasilkan Bitmap background bersih (karakter dihapus/di-inpaint dari latar)
+     * agar background dan karakter benar-benar terpisah.
+     */
+    fun buildCleanBackground(): Bitmap {
+        val currentAlpha = FloatArray(n) { alphaAt(it) }
+        return MaskRefiner.inpaintBackground(src, currentAlpha, width, height)
     }
 
     companion object {
-        /** Proses lengkap di background thread: segmentasi presisi + penghalusan warna + defringe. */
+        /**
+         * Proses lengkap di background thread:
+         * 1. Coba iLoveIMG Cloud AI Background Remover (tanpa API key) untuk hasil cutout studio.
+         * 2. Jika tidak ada internet, gunakan segmentasi on-device ML Kit + penghalusan warna + defringe.
+         */
         suspend fun create(original: Bitmap, remover: BackgroundRemover): CutoutEditor {
             val w = original.width
             val h = original.height
-            // Skala ke batas 800px untuk inferensi cepat & hemat memori, lalu upsample mask
+            val n = w * h
+
+            // 1. Coba iLoveIMG terlebih dahulu
+            val cloudCutout = remover.removeBackgroundDirect(original)
+            if (cloudCutout != null) {
+                return withContext(Dispatchers.Default) {
+                    val srcPixels = IntArray(n)
+                    original.getPixels(srcPixels, 0, w, 0, 0, w, h)
+
+                    val cloudPixels = IntArray(n)
+                    cloudCutout.getPixels(cloudPixels, 0, w, 0, 0, w, h)
+                    if (cloudCutout !== original) cloudCutout.recycle()
+
+                    val baseAlpha = FloatArray(n)
+                    val mergedRgb = IntArray(n)
+                    for (i in 0 until n) {
+                        val cp = cloudPixels[i]
+                        val a = ((cp ushr 24) and 255) / 255f
+                        baseAlpha[i] = a
+                        // Gunakan RGB dari cloudCutout di area subjek (sudah didefringe oleh iLoveIMG),
+                        // dan RGB dari foto asli di area background agar kuas "Pulihkan" tetap bisa mengembalikan gambar asli!
+                        mergedRgb[i] = if (a > 0.05f) {
+                            (0xFF shl 24) or (cp and 0xFFFFFF)
+                        } else {
+                            (0xFF shl 24) or (srcPixels[i] and 0xFFFFFF)
+                        }
+                    }
+                    CutoutEditor(w, h, mergedRgb, baseAlpha, fromCloudMatte = true)
+                }
+            }
+
+            // 2. Fallback On-Device jika offline
             val maxSide = max(w, h)
             val scaleDown = if (maxSide > 800) 800f / maxSide else 1f
             val scaledBmp = if (scaleDown < 0.99f) {
@@ -932,11 +1304,11 @@ class CutoutEditor private constructor(
             }
 
             return withContext(Dispatchers.Default) {
-                val pixels = IntArray(w * h)
+                val pixels = IntArray(n)
                 original.getPixels(pixels, 0, w, 0, 0, w, h)
                 val base = MaskRefiner.refine(pixels, fullConf, w, h)
                 val clean = MaskRefiner.defringe(pixels, base, w, h)
-                CutoutEditor(w, h, clean, base)
+                CutoutEditor(w, h, clean, base, fromCloudMatte = false)
             }
         }
     }

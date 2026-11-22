@@ -160,7 +160,7 @@ fun LocalPlaylistMenu(
                     onDismiss()
                     com.nanzbeatles.nanas.poster.PosterSession.openFromPlaylist(
                         name = playlist.playlist.name,
-                        songs = songs.filter { !it.song.song.isVideo }.map {
+                        songs = songs.map {
                             com.nanzbeatles.nanas.poster.PosterSong(
                                 id = it.song.song.id,
                                 title = it.song.song.title,
