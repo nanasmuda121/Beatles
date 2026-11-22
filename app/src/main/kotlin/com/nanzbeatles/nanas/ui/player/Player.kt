@@ -104,6 +104,7 @@ import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -2839,7 +2840,8 @@ fun InlineLyricsView(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.padding(16.dp)
                 ) {
-                    val notFoundTextColor = if (!useDarkTheme || com.nanzbeatles.nanas.ui.theme.LocalAppVisualStyle.current == "EDITORIAL") {
+                    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+                    val notFoundTextColor = if (!isDark || com.nanzbeatles.nanas.ui.theme.LocalAppVisualStyle.current == "EDITORIAL") {
                         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
                     } else {
                         Color.White.copy(alpha = 0.65f)
