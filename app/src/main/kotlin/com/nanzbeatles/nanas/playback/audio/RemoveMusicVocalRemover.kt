@@ -16,7 +16,6 @@ import android.os.Process
 import android.provider.MediaStore
 import android.widget.Toast
 import androidx.core.content.getSystemService
-import com.nanzbeatles.innertube.FallbackAudioResolver
 import com.nanzbeatles.nanas.constants.AudioQuality
 import com.nanzbeatles.nanas.playback.DownloadUtil
 import com.nanzbeatles.nanas.utils.SaveToDeviceManager
@@ -600,6 +599,68 @@ object RemoveMusicVocalRemover {
         }
     }
 
+    private fun performUpload(
+        file: File,
+        ext: String,
+        songId: String,
+        serverTime: String,
+    ): Pair<String?, Int> {
+        val fileSizeKb = ((file.length() + 1023L) / 1024L).coerceAtLeast(1L).toString()
+        val mimeType = when (ext) {
+            "mp3" -> "audio/mpeg"
+            "wav" -> "audio/wav"
+            "m4a" -> "audio/mp4"
+            "ogg" -> "audio/ogg"
+            "flac" -> "audio/flac"
+            else -> "audio/mpeg"
+        }
+
+        val multipartBody = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("platform", "5")
+            .addFormDataPart("original_file_format", ext)
+            .addFormDataPart("original_file_size", fileSizeKb)
+            .addFormDataPart("original_file_name", "track_$songId.$ext")
+            .addFormDataPart("upload_started_at", serverTime)
+            .addFormDataPart("pre_processing_time", "1")
+            .addFormDataPart(
+                "input_audio",
+                "track_$songId.$ext",
+                file.asRequestBody(mimeType.toMediaType()),
+            )
+            .build()
+
+        val uploadReq = Request.Builder()
+            .url("$BASE_API/separator/v1/vocal-music-separations/upload/")
+            .header("Origin", ORIGIN_URL)
+            .header("Referer", REFERER_URL)
+            .header("User-Agent", USER_AGENT)
+            .post(multipartBody)
+            .build()
+
+        return runCatching {
+            httpClient.newCall(uploadReq).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Timber.tag(TAG).w("remove.music upload ($ext) HTTP ${response.code}")
+                    return Pair(null, -1)
+                }
+                val bodyStr = response.body?.string().orEmpty()
+                val json = JSONObject(bodyStr)
+                val token = json.optString("access_token").takeIf { it.isNotBlank() }
+                var sepId = -1
+                val infos = json.optJSONArray("vocal_music_separator_infos")
+                if (infos != null && infos.length() > 0) {
+                    val firstInfo = infos.getJSONObject(0)
+                    sepId = firstInfo.optInt("id", -1)
+                }
+                Pair(token, sepId)
+            }
+        }.getOrElse {
+            Timber.tag(TAG).w(it, "Exception uploading ($ext) to remove.music")
+            Pair(null, -1)
+        }
+    }
+
     private suspend fun runCloudSeparation(
         context: Context,
         songId: String,
@@ -613,7 +674,7 @@ object RemoveMusicVocalRemover {
         _state.update {
             it.copy(
                 progress = 10,
-                message = "Menyiapkan audio lagu (Beta)...",
+                message = "Menyiapkan audio lagu asli...",
             )
         }
 
@@ -624,17 +685,18 @@ object RemoveMusicVocalRemover {
             songArtist = songArtist,
             songDurationSec = songDurationSec,
             downloadUtil = downloadUtil,
+            onProgress = { pct, msg ->
+                _state.update { it.copy(progress = pct, message = msg) }
+            },
         ) ?: return@withContext false
 
         val sourceFile = sourcePair.first
         val ext = sourcePair.second
 
         try {
-            val fileSizeKb = ((sourceFile.length() + 1023L) / 1024L).coerceAtLeast(1L).toString()
-
             _state.update {
                 it.copy(
-                    progress = 22,
+                    progress = 24,
                     message = "Mengunggah audio ke pemisah vokal (Beta)...",
                 )
             }
@@ -642,54 +704,35 @@ object RemoveMusicVocalRemover {
             // Step 1: Fetch server_time from https://api.vms.inverseai.com/core/v1/server-time
             val serverTime = fetchServerTime() ?: formatIsoUtcNow()
 
-            // Step 2: Upload audio to https://api.vms.inverseai.com/separator/v1/vocal-music-separations/upload/
-            val mimeType = when (ext) {
-                "mp3" -> "audio/mpeg"
-                "wav" -> "audio/wav"
-                "m4a" -> "audio/mp4"
-                "ogg" -> "audio/ogg"
-                "flac" -> "audio/flac"
-                else -> "audio/mpeg"
-            }
+            // Step 2: Upload audio
+            var (accessToken, separationId) = performUpload(
+                file = sourceFile,
+                ext = ext,
+                songId = songId,
+                serverTime = serverTime,
+            )
 
-            val multipartBody = MultipartBody.Builder()
-                .setType(MultipartBody.FORM)
-                .addFormDataPart("platform", "5")
-                .addFormDataPart("original_file_format", ext)
-                .addFormDataPart("original_file_size", fileSizeKb)
-                .addFormDataPart("original_file_name", "track_$songId.$ext")
-                .addFormDataPart("upload_started_at", serverTime)
-                .addFormDataPart("pre_processing_time", "1")
-                .addFormDataPart(
-                    "input_audio",
-                    "track_$songId.$ext",
-                    sourceFile.asRequestBody(mimeType.toMediaType()),
-                )
-                .build()
-
-            val uploadReq = Request.Builder()
-                .url("$BASE_API/separator/v1/vocal-music-separations/upload/")
-                .header("Origin", ORIGIN_URL)
-                .header("Referer", REFERER_URL)
-                .header("User-Agent", USER_AGENT)
-                .post(multipartBody)
-                .build()
-
-            var accessToken: String? = null
-            var separationId: Int = -1
-
-            httpClient.newCall(uploadReq).execute().use { response ->
-                if (!response.isSuccessful) {
-                    Timber.tag(TAG).w("remove.music upload HTTP ${response.code}")
-                    return@withContext false
+            // If initial upload failed (e.g. server disliked direct M4A) and file was not WAV, retry as WAV:
+            if ((accessToken.isNullOrBlank() || separationId <= 0) && ext != "wav") {
+                Timber.tag(TAG).w("Initial upload with format $ext failed, retrying with normalized WAV")
+                _state.update {
+                    it.copy(
+                        progress = 25,
+                        message = "Mengonversi audio untuk pemisahan vokal (Beta)...",
+                    )
                 }
-                val bodyStr = response.body?.string().orEmpty()
-                val json = JSONObject(bodyStr)
-                accessToken = json.optString("access_token").takeIf { it.isNotBlank() }
-                val infos = json.optJSONArray("vocal_music_separator_infos")
-                if (infos != null && infos.length() > 0) {
-                    val firstInfo = infos.getJSONObject(0)
-                    separationId = firstInfo.optInt("id", -1)
+                val wavFile = File(sourceFile.parentFile, "retry_wav_${songId.hashCode()}_${System.currentTimeMillis()}.wav")
+                val converted = convertAnyAudioToWav(sourceFile, wavFile)
+                if (converted && wavFile.exists() && wavFile.length() > 32_768L) {
+                    val (retryToken, retryId) = performUpload(
+                        file = wavFile,
+                        ext = "wav",
+                        songId = songId,
+                        serverTime = serverTime,
+                    )
+                    accessToken = retryToken
+                    separationId = retryId
+                    runCatching { wavFile.delete() }
                 }
             }
 
@@ -833,11 +876,9 @@ object RemoveMusicVocalRemover {
     }
 
     /**
-     * Obtains a complete, non-truncated, standard audio file (preferably `.mp3` or `.wav`)
-     * for [songId] so `api.vms.inverseai.com` (VMS 5.0) processes it with 100% accuracy.
-     *
-     * Never reads partial streaming chunks from `playerCache`, and converts any non-MP3/non-WAV
-     * container (such as fragmented fMP4 or WebM/Opus) to a standard 16-bit WAV file.
+     * Obtains the authentic, complete audio file matching the current [songId] from YouTube Music.
+     * Never queries third-party SoundCloud to eliminate song mismatch / cover version replacements.
+     * Supports direct upload of standard containers (.m4a, .mp3, .wav, .flac) to avoid slow 40MB WAV conversion.
      */
     private suspend fun prepareUploadableAudioFile(
         context: Context,
@@ -846,55 +887,38 @@ object RemoveMusicVocalRemover {
         songArtist: String?,
         songDurationSec: Int,
         downloadUtil: DownloadUtil,
+        onProgress: ((Int, String) -> Unit)? = null,
     ): Pair<File, String>? {
         val tempDir = File(context.cacheDir, "remove_music_temp").apply { mkdirs() }
         val rawFile = File(tempDir, "raw_${songId.hashCode()}_${System.currentTimeMillis()}.tmp")
 
-        // 1. Resolve full-length MP3 directly via FallbackAudioResolver (checks existing MP3 cache first,
-        //    or downloads progressive/HLS MP3 from SoundCloud CDN).
-        val resolvedMp3 = runCatching {
-            FallbackAudioResolver.resolveMp3FileForSeparation(
-                videoId = songId,
-                fallbackTitle = songTitle,
-                fallbackAuthor = songArtist,
-                fallbackDurationSec = songDurationSec,
-            )
+        // 1. Check completed offline download in downloadCache (never third-party SoundCloud)
+        onProgress?.invoke(10, "Mengecek cache lagu...")
+        val dlCache = downloadUtil.downloadCache
+        val spans = runCatching {
+            dlCache.getCachedSpans(songId)
+                .filter { it.isCached && it.file != null && it.file!!.exists() && it.file!!.length() > 0L }
+                .sortedBy { it.position }
         }.getOrNull()
-
-        if (resolvedMp3 != null && resolvedMp3.exists() && resolvedMp3.length() > 16_384L) {
-            runCatching {
-                resolvedMp3.copyTo(rawFile, overwrite = true)
-            }
-        }
-
-        // 2. If not resolved yet, check completed offline download in downloadCache (never partial playerCache)
-        if (!rawFile.exists() || rawFile.length() <= 16_384L) {
-            val cache = downloadUtil.downloadCache
-            val spans = runCatching {
-                cache.getCachedSpans(songId)
-                    .filter { it.isCached && it.file != null && it.file!!.exists() && it.file!!.length() > 0L }
-                    .sortedBy { it.position }
-            }.getOrNull()
-            if (!spans.isNullOrEmpty() && spans.first().position == 0L) {
-                var expectedPos = 0L
-                var contiguous = true
-                for (span in spans) {
-                    if (span.position != expectedPos) {
-                        contiguous = false
-                        break
-                    }
-                    expectedPos += span.length
+        if (!spans.isNullOrEmpty() && spans.first().position == 0L) {
+            var expectedPos = 0L
+            var contiguous = true
+            for (span in spans) {
+                if (span.position != expectedPos) {
+                    contiguous = false
+                    break
                 }
-                if (contiguous && expectedPos > 64_000L) {
-                    runCatching {
-                        FileOutputStream(rawFile).use { out ->
-                            val buf = ByteArray(64 * 1024)
-                            for (span in spans) {
-                                FileInputStream(span.file!!).use { input ->
-                                    var r: Int
-                                    while (input.read(buf).also { r = it } != -1) {
-                                        out.write(buf, 0, r)
-                                    }
+                expectedPos += span.length
+            }
+            if (contiguous && expectedPos > 64_000L) {
+                runCatching {
+                    FileOutputStream(rawFile).use { out ->
+                        val buf = ByteArray(64 * 1024)
+                        for (span in spans) {
+                            FileInputStream(span.file!!).use { input ->
+                                var r: Int
+                                while (input.read(buf).also { r = it } != -1) {
+                                    out.write(buf, 0, r)
                                 }
                             }
                         }
@@ -903,8 +927,9 @@ object RemoveMusicVocalRemover {
             }
         }
 
-        // 3. Fallback: download full stream via YTPlayerUtils
+        // 2. Fetch authentic YouTube Music stream for the exact songId if not cached offline
         if (!rawFile.exists() || rawFile.length() <= 16_384L) {
+            onProgress?.invoke(11, "Menghubungkan ke stream audio asli...")
             runCatching {
                 val cm = context.getSystemService<ConnectivityManager>() ?: return@runCatching
                 val playbackData = YTPlayerUtils.playerResponseForPlayback(
@@ -920,8 +945,21 @@ object RemoveMusicVocalRemover {
                     httpClient.newCall(reqBuilder.build()).execute().use { res ->
                         if (res.isSuccessful) {
                             val body = res.body ?: return@use
+                            val totalBytes = body.contentLength()
+                            var downloadedBytes = 0L
+                            val buf = ByteArray(64 * 1024)
+                            var read: Int
+                            val inStream = body.byteStream()
                             FileOutputStream(rawFile).use { out ->
-                                body.byteStream().copyTo(out, 64 * 1024)
+                                while (inStream.read(buf).also { read = it } != -1) {
+                                    out.write(buf, 0, read)
+                                    downloadedBytes += read
+                                    if (totalBytes > 0) {
+                                        val pct = 12 + ((downloadedBytes.toFloat() / totalBytes.toFloat()) * 10f).toInt().coerceIn(0, 10)
+                                        val kb = downloadedBytes / 1024
+                                        onProgress?.invoke(pct, "Menyiapkan audio lagu asli ($kb KB)...")
+                                    }
+                                }
                             }
                         }
                     }
@@ -934,15 +972,17 @@ object RemoveMusicVocalRemover {
             return null
         }
 
-        // Inspect magic bytes: if already standard MP3 or WAV, upload directly.
-        // Otherwise (e.g. fragmented fMP4 or WebM/Opus), decode to a standard WAV file so
-        // api.vms.inverseai.com never fails on fragmented/WebM containers.
+        // 3. Inspect audio format:
+        // MP3, M4A/AAC, WAV, FLAC, and OGG can be uploaded directly to api.vms.inverseai.com (saving 90%+ bandwidth & time).
+        // Only decode/convert to standard 16-bit WAV if container is non-standard or fragmented.
+        onProgress?.invoke(23, "Memvalidasi format audio...")
         val detectedExt = detectStrictAudioFormat(rawFile)
-        if (detectedExt == "mp3" || detectedExt == "wav") {
+        if (detectedExt == "mp3" || detectedExt == "wav" || detectedExt == "m4a" || detectedExt == "flac" || detectedExt == "ogg") {
             return rawFile to detectedExt
         }
 
         val wavFile = File(tempDir, "norm_${songId.hashCode()}_${System.currentTimeMillis()}.wav")
+        onProgress?.invoke(23, "Mengonversi audio ke WAV...")
         val converted = convertAnyAudioToWav(rawFile, wavFile)
         runCatching { rawFile.delete() }
         return if (converted && wavFile.exists() && wavFile.length() > 32_768L) {
@@ -976,6 +1016,30 @@ object RemoveMusicVocalRemover {
                 header[11] == 'E'.code.toByte()
             ) {
                 return "wav"
+            }
+            // ISO/IEC 14496-12 (M4A / MP4): 'ftyp' at bytes 4..7
+            if (header[4] == 'f'.code.toByte() &&
+                header[5] == 't'.code.toByte() &&
+                header[6] == 'y'.code.toByte() &&
+                header[7] == 'p'.code.toByte()
+            ) {
+                return "m4a"
+            }
+            // Ogg bitstream: 'OggS'
+            if (header[0] == 'O'.code.toByte() &&
+                header[1] == 'g'.code.toByte() &&
+                header[2] == 'g'.code.toByte() &&
+                header[3] == 'S'.code.toByte()
+            ) {
+                return "ogg"
+            }
+            // Free Lossless Audio Codec: 'fLaC'
+            if (header[0] == 'f'.code.toByte() &&
+                header[1] == 'L'.code.toByte() &&
+                header[2] == 'a'.code.toByte() &&
+                header[3] == 'C'.code.toByte()
+            ) {
+                return "flac"
             }
         }
         return "other"
