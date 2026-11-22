@@ -648,13 +648,17 @@ fun OriginalLyrics(
     val isEditorial = com.nanzbeatles.nanas.ui.theme.LocalAppVisualStyle.current == "EDITORIAL"
     val expressiveAccent = if (isEditorial) {
         MaterialTheme.colorScheme.onSurface
+    } else if (!useDarkTheme) {
+        when (playerBackground) {
+            PlayerBackgroundStyle.DEFAULT -> MaterialTheme.colorScheme.primary
+            else -> MaterialTheme.colorScheme.onSurface
+        }
     } else {
         when (playerBackground) {
             PlayerBackgroundStyle.DEFAULT -> MaterialTheme.colorScheme.primary
             PlayerBackgroundStyle.BLUR,
             PlayerBackgroundStyle.GRADIENT,
             PlayerBackgroundStyle.ANIMATED_GRADIENT -> {
-                // For blur/gradient backgrounds, always use light colors regardless of theme
                 Color.White
             }
         }

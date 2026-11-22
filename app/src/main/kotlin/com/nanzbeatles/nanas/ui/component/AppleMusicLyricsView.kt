@@ -72,6 +72,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -783,29 +784,31 @@ private fun AppleMusicKaraokeWord(
     }
 
     val displayText = if (word.hasTrailingSpace) "${word.text} " else word.text
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val baseColor = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface
 
     val textStyle = TextStyle(
         fontSize = if (isBackground) 22.sp else 28.sp,
         fontWeight = FontWeight.ExtraBold,
         shadow = Shadow(
-            color = Color.Black.copy(alpha = 0.35f),
+            color = if (isDark) Color.Black.copy(alpha = 0.35f) else Color.Transparent,
             offset = Offset(0f, 2f),
             blurRadius = 5f
         )
     )
 
     if (progress >= 1f) {
-        // Fully sung word: Solid vibrant white
+        // Fully sung word: Solid vibrant
         Text(
             text = displayText,
-            color = Color.White,
+            color = baseColor,
             style = textStyle
         )
     } else if (progress <= 0f) {
-        // Upcoming word: Dimmed white
+        // Upcoming word: Dimmed
         Text(
             text = displayText,
-            color = Color.White.copy(alpha = 0.45f),
+            color = baseColor.copy(alpha = 0.45f),
             style = textStyle
         )
     } else {
@@ -815,10 +818,10 @@ private fun AppleMusicKaraokeWord(
         val pEnd = (progress + spread).coerceAtMost(1f)
 
         val sweepBrush = Brush.horizontalGradient(
-            0f to Color.White,
-            pStart to Color.White,
-            pEnd to Color.White.copy(alpha = 0.45f),
-            1f to Color.White.copy(alpha = 0.45f)
+            0f to baseColor,
+            pStart to baseColor,
+            pEnd to baseColor.copy(alpha = 0.45f),
+            1f to baseColor.copy(alpha = 0.45f)
         )
 
         Text(

@@ -1841,8 +1841,8 @@ fun BottomSheetPlayer(
         ) { fullScreenLyrics ->
             if (fullScreenLyrics && mediaMetadata != null) {
                 val meta = mediaMetadata!!
-                val fullLyricsBgColor = if (isEditorial) bottomSheetBackgroundColor else Color(0xFF08090C).copy(alpha = 0.94f)
-                val fullLyricsFgColor = if (isEditorial) TextBackgroundColor else Color.White
+                val fullLyricsBgColor = if (isEditorial || !useDarkTheme) bottomSheetBackgroundColor else Color(0xFF08090C).copy(alpha = 0.94f)
+                val fullLyricsFgColor = if (isEditorial || !useDarkTheme) TextBackgroundColor else Color.White
                 // MODE 3: FULLSCREEN LYRICS VIEW
                 Column(
                     modifier = Modifier
@@ -2349,7 +2349,7 @@ fun BottomSheetPlayer(
                                 ) { showLyricsCard ->
                                     if (showLyricsCard && mediaMetadata != null) {
                                         val meta = mediaMetadata!!
-                                        val cardFgColor = if (isEditorial) TextBackgroundColor else Color.White
+                                        val cardFgColor = TextBackgroundColor
                                         val cardPillShape = if (isEditorial) RoundedCornerShape(8.dp) else RoundedCornerShape(50)
                                         val cardBtnShape = if (isEditorial) RoundedCornerShape(6.dp) else CircleShape
                                         // INLINE LYRICS CARD
@@ -2604,15 +2604,19 @@ fun BottomSheetPlayer(
                                             val overlayPillShape = if (isEditorial) RoundedCornerShape(8.dp) else RoundedCornerShape(50)
                                             val overlayPillBg = if (isEditorial) {
                                                 bottomSheetBackgroundColor.copy(alpha = 0.90f)
+                                            } else if (!useDarkTheme) {
+                                                Color.White.copy(alpha = 0.85f)
                                             } else {
                                                 Color.Black.copy(alpha = 0.68f)
                                             }
                                             val overlayPillBorder = if (isEditorial) {
                                                 TextBackgroundColor.copy(alpha = 0.25f)
+                                            } else if (!useDarkTheme) {
+                                                Color.Black.copy(alpha = 0.15f)
                                             } else {
                                                 Color.White.copy(alpha = 0.22f)
                                             }
-                                            val overlayPillFg = if (isEditorial) TextBackgroundColor else Color.White
+                                            val overlayPillFg = TextBackgroundColor
                                             Row(
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -2835,7 +2839,7 @@ fun InlineLyricsView(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.padding(16.dp)
                 ) {
-                    val notFoundTextColor = if (com.nanzbeatles.nanas.ui.theme.LocalAppVisualStyle.current == "EDITORIAL") {
+                    val notFoundTextColor = if (!useDarkTheme || com.nanzbeatles.nanas.ui.theme.LocalAppVisualStyle.current == "EDITORIAL") {
                         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
                     } else {
                         Color.White.copy(alpha = 0.65f)

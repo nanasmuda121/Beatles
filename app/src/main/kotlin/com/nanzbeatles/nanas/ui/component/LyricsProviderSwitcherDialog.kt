@@ -35,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -237,9 +238,10 @@ fun LyricsProviderQuickPill(
         else -> LyricsHelper.displayNameOf(preferredProvider)
     }
 
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val isEditorial = com.nanzbeatles.nanas.ui.theme.LocalAppVisualStyle.current == "EDITORIAL"
     val pillShape = if (isEditorial) RoundedCornerShape(8.dp) else RoundedCornerShape(50)
-    val fgColor = if (isEditorial) MaterialTheme.colorScheme.onSurface else Color.White
+    val fgColor = if (isEditorial || !isDark) MaterialTheme.colorScheme.onSurface else Color.White
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
