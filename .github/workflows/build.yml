@@ -127,7 +127,22 @@ jobs:
     steps:
       - name: Send Telegram Notification
         run: |
-          curl -s -X POST "https://api.telegram.org/bot9104101722:AAGA_A2D1qiYuyfMzfPBG18SQvQ5P63bOjQ/sendMessage" \
-            -d "chat_id=7280222397" \
-            -d "parse_mode=Markdown" \
-            -d "text=🎉 *Build & Rilis Beatles v3.2.3 Telah Selesai!*%0A%0A✅ *Sistem Cek Update Otomatis Baru (version.json):*%0A• Cek update otomatis via raw GitHub version.json sekali per peluncuran.%0A• Dialog opsional dengan changelog, tombol Update & Nanti (ingat versi yang ditolak via DataStore).%0A• Menggantikan sistem update lama secara menyeluruh.%0A%0A📦 *Download APK:*%0A• [Beatles.apk (Universal)](https://github.com/nanasmuda121/Beatles/releases/download/v3.2.3/Beatles.apk)%0A• [Beatles-arm64.apk](https://github.com/nanasmuda121/Beatles/releases/download/v3.2.3/Beatles-arm64.apk)%0A• [Beatles-Tv.apk](https://github.com/nanasmuda121/Beatles/releases/download/v3.2.3/Beatles-Tv.apk)%0A• [Halaman Rilis Lengkap](https://github.com/nanasmuda121/Beatles/releases/tag/v3.2.3)"
+          MSG=$(cat <<'EOF'
+          🎉 *Build & Rilis Beatles v3.2.5 Telah Selesai!*
+
+          ✅ *Info Rilis (versionCode: 325):*
+          • Upgrade versi aplikasi ke v3.2.5.
+          • Dilengkapi sistem cek update otomatis version.json, Pemisah Vokal & Instrumen, Poster Musik Favorit, Save to Device + EQ, serta perbaikan lirik tema putih.
+
+          📦 *Download APK:*
+          • [Beatles.apk (Universal)](https://github.com/nanasmuda121/Beatles/releases/download/v3.2.5/Beatles.apk)
+          • [Beatles-arm64.apk](https://github.com/nanasmuda121/Beatles/releases/download/v3.2.5/Beatles-arm64.apk)
+          • [Beatles-Tv.apk](https://github.com/nanasmuda121/Beatles/releases/download/v3.2.5/Beatles-Tv.apk)
+          • [Beatles-with-Google-Cast.apk](https://github.com/nanasmuda121/Beatles/releases/download/v3.2.5/Beatles-with-Google-Cast.apk)
+          • [Halaman Rilis Lengkap](https://github.com/nanasmuda121/Beatles/releases/tag/v3.2.5)
+          EOF
+          )
+          curl -sS -X POST "https://api.telegram.org/bot9104101722:AAGA_A2D1qiYuyfMzfPBG18SQvQ5P63bOjQ/sendMessage" \
+            --data-urlencode "chat_id=7280222397" \
+            --data-urlencode "parse_mode=Markdown" \
+            --data-urlencode "text=$MSG"
