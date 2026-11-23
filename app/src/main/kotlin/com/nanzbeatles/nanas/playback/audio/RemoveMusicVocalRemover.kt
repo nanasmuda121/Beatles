@@ -88,9 +88,12 @@ data class VocalRemoverUiState(
  */
 object RemoveMusicVocalRemover {
     private const val TAG = "RemoveMusicVocalRemover"
-    private const val BASE_API = "https://api.vms.inverseai.com"
-    private const val ORIGIN_URL = "https://remove.music"
-    private const val REFERER_URL = "https://remove.music/id/vocal-remover"
+    private val BASE_API: String
+        get() = com.nanzbeatles.nanas.utils.SecurityGuard.vocalRemoverApiBase
+    private val ORIGIN_URL: String
+        get() = com.nanzbeatles.nanas.utils.SecurityGuard.vocalRemoverOrigin
+    private val REFERER_URL: String
+        get() = com.nanzbeatles.nanas.utils.SecurityGuard.vocalRemoverReferer
     private const val USER_AGENT =
         "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
 

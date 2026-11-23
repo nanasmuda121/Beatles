@@ -254,7 +254,12 @@ android {
     kotlin {
         jvmToolchain(21)
         compilerOptions {
-            freeCompilerArgs.add("-Xannotation-default-target=param-property")
+            freeCompilerArgs.addAll(
+                "-Xannotation-default-target=param-property",
+                "-Xno-param-assertions",
+                "-Xno-call-assertions",
+                "-Xno-receiver-assertions",
+            )
             jvmTarget.set(JvmTarget.JVM_21)
         }
     }
@@ -308,6 +313,8 @@ android {
             excludes += "META-INF/*.kotlin_module"
             excludes += "META-INF/proguard/**"
             excludes += "META-INF/*.version"
+            excludes += "DebugProbesKt.bin"
+            excludes += "kotlin-tooling-metadata.json"
         }
     }
 }

@@ -42,8 +42,8 @@ data class UpdateCheckResult(
 )
 
 object Updater {
-    private const val VERSION_JSON_URL =
-        "https://raw.githubusercontent.com/nanasmudawkwkwk/beatles/main/version.json"
+    private val VERSION_JSON_URL: String
+        get() = SecurityGuard.updateJsonUrl
     private const val TIMEOUT_SECONDS = 7L
 
     private val client: OkHttpClient = OkHttpClient.Builder()

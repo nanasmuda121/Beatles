@@ -73,6 +73,9 @@ class App : Application(), SingletonImageLoader.Factory {
     override fun onCreate() {
         super.onCreate()
         instance = this
+
+        // Verify release integrity (blocks active debugger/tracer/repack tampering)
+        com.nanzbeatles.nanas.utils.SecurityGuard.verifyRuntimeIntegrity(this)
         
         // Install crash handler first
         CrashHandler.install(this)
@@ -88,7 +91,9 @@ class App : Application(), SingletonImageLoader.Factory {
             androidx.core.os.LocaleListCompat.forLanguageTags("id-ID")
         )
 
-        Timber.plant(Timber.DebugTree())
+        if (BuildConfig.DEBUG) {
+            Timber.plant(Timber.DebugTree())
+        }
 
         // Initialize Paxsenix synchronously so lyrics can be fetched immediately
         com.nanzbeatles.paxsenix.Paxsenix.init(this)

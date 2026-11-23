@@ -148,7 +148,12 @@ interface BackgroundRemover {
  * Mengambil token JWT publik & taskId secara dinamis, mengunggah gambar, dan mengunduh PNG hasil cutout.
  */
 object ILoveImgClient {
-    private const val PAGE_URL = "https://www.iloveimg.com/remove-background"
+    private val PAGE_URL: String
+        get() = com.nanzbeatles.nanas.utils.SecurityGuard.bgRemoverPageUrl
+    private val ORIGIN_URL: String
+        get() = com.nanzbeatles.nanas.utils.SecurityGuard.bgRemoverOrigin
+    private val HOST_SUFFIX: String
+        get() = com.nanzbeatles.nanas.utils.SecurityGuard.bgRemoverHostSuffix
     private const val USER_AGENT =
         "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
 
@@ -215,7 +220,7 @@ object ILoveImgClient {
             var lastError: Throwable? = null
             for (server in session.servers.take(3)) {
                 try {
-                    val baseUrl = "https://$server.iloveimg.com"
+                    val baseUrl = "https://$server$HOST_SUFFIX"
 
                     // 1. Upload file ke /v1/upload
                     val uploadBody = MultipartBody.Builder()
@@ -233,7 +238,7 @@ object ILoveImgClient {
                         .url("$baseUrl/v1/upload")
                         .header("User-Agent", USER_AGENT)
                         .header("Authorization", "Bearer ${session.token}")
-                        .header("Origin", "https://www.iloveimg.com")
+                        .header("Origin", ORIGIN_URL)
                         .header("Referer", PAGE_URL)
                         .post(uploadBody)
                         .build()
@@ -260,7 +265,7 @@ object ILoveImgClient {
                         .url("$baseUrl/v1/removebackground")
                         .header("User-Agent", USER_AGENT)
                         .header("Authorization", "Bearer ${session.token}")
-                        .header("Origin", "https://www.iloveimg.com")
+                        .header("Origin", ORIGIN_URL)
                         .header("Referer", PAGE_URL)
                         .post(processBody)
                         .build()

@@ -356,6 +356,7 @@ class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.nanzbeatles.nanas.utils.SecurityGuard.verifyRuntimeIntegrity(this)
 
         // For TV builds, use TV activity directly
         if (BuildConfig.FLAVOR.contains("tv")) {

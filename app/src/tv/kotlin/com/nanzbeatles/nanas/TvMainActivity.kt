@@ -176,6 +176,7 @@ class TvMainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.nanzbeatles.nanas.utils.SecurityGuard.verifyRuntimeIntegrity(this)
         
         try {
             val idLocale = java.util.Locale("id", "ID")

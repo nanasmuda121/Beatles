@@ -132,6 +132,7 @@ jobs:
 
           ✅ *Info Rilis (versionCode: 325):*
           • Upgrade versi aplikasi ke v3.2.5.
+          • Proteksi anti-decompile & obfuscation penuh (R8 repackage, kamus lookalike, hapus nama file/parameter/log debug, enkripsi string endpoint, & anti-debug/repack runtime guard).
           • Dilengkapi sistem cek update otomatis version.json, Pemisah Vokal & Instrumen, Poster Musik Favorit, Save to Device + EQ, serta perbaikan lirik tema putih.
 
           📦 *Download APK:*
